@@ -1,0 +1,27 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .: {}
+
+  packages/@nublox/sqlx-cli:
+    dependencies:
+      '@nublox/sqlx-core':
+        specifier: workspace:*
+        version: link:../sqlx-core
+      '@nublox/sqlx-transport-mysql':
+        specifier: workspace:*
+        version: link:../sqlx-transport-mysql
+      '@nublox/sqlx-transport-pg':
+        specifier: workspace:*
+        version: link:../sqlx-transport-pg
+
+  packages/@nublox/sqlx-core: {}
+
+  packages/@nublox/sqlx-transport-mysql: {}
+
+  packages/@nublox/sqlx-transport-pg: {}

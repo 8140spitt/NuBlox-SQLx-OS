@@ -1,0 +1,18 @@
+{
+  "name": "nublox_sqlx_os",
+  "private": true,
+  "version": "0.1.0",
+  "description": "NuBlox SQLx — dialect-agnostic DBMS core + CLI (Phase 1)",
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/@nublox/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r run build",
+    "clean": "pnpm -r run clean",
+    "dev": "pnpm -F @nublox/sqlx-cli run dev"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

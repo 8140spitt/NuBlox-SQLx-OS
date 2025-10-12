@@ -1,0 +1,20 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "composite": true
+    },
+    "references": [
+        {
+            "path": "../@nublox/sqlx-core"
+        },
+        {
+            "path": "../@nublox/sqlx-transport-mysql"
+        },
+        {
+            "path": "../@nublox/sqlx-transport-pg"
+        }
+    ],
+    "include": [
+        "src"
+    ]
+}
