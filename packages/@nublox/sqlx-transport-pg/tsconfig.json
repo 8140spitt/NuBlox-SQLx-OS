@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
     "rootDir": "./src",
@@ -9,8 +9,5 @@
   },
   "include": [
     "src"
-  ],
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts"
+  ]
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import { URL } from 'node:url';
+import { URL } from "url";
 import { diffSnapshots, applyPlan } from '@nublox/sqlx-core';
 import { probeMySQL } from '@nublox/sqlx-transport-mysql';
 import { probePostgres } from '@nublox/sqlx-transport-pg';

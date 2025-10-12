@@ -1,4 +1,4 @@
-import type { Plan } from './ir';
+import type { Plan } from './ir.js';
 
 
 export function diffSnapshots(_a: any, _b: any): Plan {

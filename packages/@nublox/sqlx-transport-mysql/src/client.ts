@@ -1,7 +1,7 @@
-import * as net from "net";;
-import * as tls from "tls";;
-import * as crypto from "crypto";;
-import { URL } from "url";;
+import * as net from "net";
+import * as tls from "tls";
+import * as crypto from "crypto";
+import { URL } from "url";
 
 
 export type QueryResult = { rows: any[] };
@@ -87,7 +87,7 @@ export class MySQLClient {
 
 // helpers
 function u32le(n: number) { const b = Buffer.allocUnsafe(4); b.writeUInt32LE(n, 0); return b; }
-function cstr(s: string) { return Buffer.from(s + '\\0'); }
+function cstr(s: string) { return Buffer.from(s + '\0'); }
 function packet(payload: Buffer, seq: number) { const h = Buffer.allocUnsafe(4); h.writeUIntLE(payload.length, 0, 3); h[3] = seq & 0xFF; return Buffer.concat([h, payload]); }
 async function writePacket(sock: net.Socket | tls.TLSSocket, seq: number, payload: Buffer) { sock.write(packet(payload, seq)); }
 

@@ -1,22 +1,19 @@
-import * as net from "net";;
-import * as tls from "tls";;
-import { URL } from "url";;
-
-
+import * as net from "net";
+import * as tls from "tls";
+import { URL } from "url";
 
 export type MySQLProbe = { serverVersion?: string; tlsAttempted: boolean; portOpen?: boolean; error?: string; capabilityBits?: number };
 
-
 export async function probeMySQL(urlString: string, timeoutMs = 3000): Promise<MySQLProbe> {
     const result: MySQLProbe = { tlsAttempted: false };
-    let socket: net.Socket | tls.TLSSocket | null = null;
+    let socket: net.Socket | tls.TLSSocket | undefined;
+    
     try {
         const url = new URL(urlString);
         const host = url.hostname || '127.0.0.1';
         const port = Number(url.port) || (url.protocol === 'mysqls:' ? 33060 : 3306);
         const useTLS = url.protocol === 'mysqls:' || url.searchParams.get('ssl') === '1' || url.searchParams.get('ssl') === 'true';
         result.tlsAttempted = !!useTLS;
-
 
         await new Promise<void>((resolve, reject) => {
             let resolved = false;
@@ -44,7 +41,10 @@ export async function probeMySQL(urlString: string, timeoutMs = 3000): Promise<M
                     result.capabilityBits = (capHi << 16) | capLo;
                     socket?.end();
                     resolve();
-                } catch (e) { socket?.destroy(); reject(e as Error); }
+                } catch (e) { 
+                    socket?.destroy(); 
+                    reject(e as Error); 
+                }
             };
             const onConnect = () => { /* wait for server greeting */ };
             socket = useTLS ? tls.connect({ host, port, rejectUnauthorized: false }, onConnect) : net.connect({ host, port }, onConnect);
@@ -54,12 +54,15 @@ export async function probeMySQL(urlString: string, timeoutMs = 3000): Promise<M
             socket.once('close', () => { if (!resolved) { resolved = true; resolve(); } });
         });
 
-
         result.portOpen = true;
         return result;
     } catch (err: any) {
         return { ...result, error: err?.message || String(err) };
     } finally {
-        try { socket?.destroy(); } catch { }
+        try { 
+            socket?.destroy(); 
+        } catch { 
+            // ignore cleanup errors
+        }
     }
 }

@@ -1,4 +1,4 @@
-import type { ColumnSpec } from './ir';
+import type { ColumnSpec } from './ir.js';
 
 
 export type FeatureMap = {
@@ -40,7 +40,7 @@ export async function learnFeatures(db: { query: (sql: string) => Promise<any> }
 
 export function quoteIdent(quoteChar: FeatureMap['quote'], id: string) {
     if (quoteChar === '[') return `[${id.replace(/]/g, ']]')}]`;
-    const esc = quoteChar; return `${quoteChar}${id.replaceAll(quoteChar, esc + quoteChar)}${quoteChar}`;
+    const esc = quoteChar; return `${quoteChar}${id.split(quoteChar).join(esc + quoteChar)}${quoteChar}`;
 }
 
 
@@ -54,5 +54,6 @@ export function typeSql(f: FeatureMap, c: ColumnSpec): string {
         case 'json': return f.jsonType;
         case 'decimal': return `decimal(${c.len ?? 10},${c.scale ?? 2})`;
         case 'ts': return f.timestampType;
+        default: return 'text'; // fallback for unknown types
     }
 }

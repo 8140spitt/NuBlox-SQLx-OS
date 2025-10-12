@@ -7,5 +7,8 @@
     "scripts": {
         "build": "tsc -p tsconfig.json",
         "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    },
+    "dependencies": {
+        "@nublox/sqlx-core": "workspace:*"
     }
 }
