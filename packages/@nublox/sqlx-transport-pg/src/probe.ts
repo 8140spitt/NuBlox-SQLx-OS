@@ -1,5 +1,6 @@
-import net from 'node:net';
-import { URL } from 'node:url';
+import * as net from "net";;
+import { URL } from "url";;
+
 
 
 export type PGProbe = { tlsOffered?: boolean; error?: string; portOpen?: boolean };

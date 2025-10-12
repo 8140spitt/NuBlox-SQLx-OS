@@ -1,6 +1,6 @@
-import type { FeatureMap } from './features.js';
-import { quoteIdent, typeSql } from './features.js';
-import type { Op } from './ir.js';
+import type { FeatureMap } from './features';
+import { quoteIdent, typeSql } from './features';
+import type { Op } from './ir';
 
 
 export function emitCreateTable(f: FeatureMap, op: Extract<Op, { kind: 'CreateTable' }>): string {

@@ -10,9 +10,16 @@
   "scripts": {
     "build": "pnpm -r run build",
     "clean": "pnpm -r run clean",
-    "dev": "pnpm -F @nublox/sqlx-cli run dev"
+    "dev": "pnpm -F @nublox/sqlx-cli run dev",
+    "clean:dist": "find packages -type d -name dist -prune -exec rm -rf {} +",
+    "clean:src": "find packages -type f -path '*/src/*' \\( -name '*.js' -o -name '*.d.ts' -o -name '*.js.map' -o -name '*.d.ts.map' \\) -delete",
+    "clean:all": "pnpm run clean:dist && pnpm run clean:src"
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.10",
+    "typescript": "^5.9.3"
   }
 }

@@ -7,6 +7,12 @@
         "skipLibCheck": true,
         "declaration": true,
         "outDir": "dist",
-        "rootDir": "src"
+        "rootDir": "src",
+        "lib": [
+            "ES2022"
+        ],
+        "types": [
+            "node"
+        ]
     }
 }

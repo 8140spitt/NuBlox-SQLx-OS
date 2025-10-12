@@ -1,4 +1,4 @@
-import type { ColumnSpec } from './ir.js';
+import type { ColumnSpec } from './ir';
 
 
 export type FeatureMap = {

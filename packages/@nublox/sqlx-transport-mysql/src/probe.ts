@@ -1,6 +1,7 @@
-import net from 'node:net';
-import tls from 'node:tls';
-import { URL } from 'node:url';
+import * as net from "net";;
+import * as tls from "tls";;
+import { URL } from "url";;
+
 
 
 export type MySQLProbe = { serverVersion?: string; tlsAttempted: boolean; portOpen?: boolean; error?: string; capabilityBits?: number };

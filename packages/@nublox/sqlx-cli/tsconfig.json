@@ -1,20 +1,27 @@
 {
-    "extends": "../../tsconfig.base.json",
-    "compilerOptions": {
-        "composite": true
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationDir": "./dist"
+  },
+  "references": [
+    {
+      "path": "../sqlx-core"
     },
-    "references": [
-        {
-            "path": "../@nublox/sqlx-core"
-        },
-        {
-            "path": "../@nublox/sqlx-transport-mysql"
-        },
-        {
-            "path": "../@nublox/sqlx-transport-pg"
-        }
-    ],
-    "include": [
-        "src"
-    ]
+    {
+      "path": "../sqlx-transport-mysql"
+    },
+    {
+      "path": "../sqlx-transport-pg"
+    }
+  ],
+  "include": [
+    "src"
+  ]
 }
