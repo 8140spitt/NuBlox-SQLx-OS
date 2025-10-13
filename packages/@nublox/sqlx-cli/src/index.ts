@@ -1,60 +1,119 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
-import { URL } from "url";
-import { diffSnapshots, applyPlan } from '@nublox/sqlx-core';
-import { probeMySQL } from '@nublox/sqlx-transport-mysql';
-import { probePostgres } from '@nublox/sqlx-transport-pg';
+import { parseDialect, requireArg, optionalArg } from './resolve.js';
+import type { ISqlxClient, ProbeInfo } from '@nublox/sqlx-core';
+import { normalizeParams } from '@nublox/sqlx-core';
 
+// ✅ static namespace imports (no dynamic import typing issues)
+import * as Mysql from '@nublox/sqlx-transport-mysql';
+import * as Pg from '@nublox/sqlx-transport-pg';
 
-const commands: Record<string, (argv: string[]) => Promise<number>> = {
-    async '--help'() { return help(); }, async '-h'() { return help(); }, async help() { return help(); },
-    async '--version'() { console.log('nublox-sqlx v0.1.0'); return 0; },
+type Cmd = 'ping' | 'learn' | 'query' | 'snapshot:pull';
+const [, , rawCmd, ...rest] = process.argv;
+const cmd = (rawCmd || '').toLowerCase() as Cmd;
 
-
-    async ping(argv) {
-        const { url } = flags(argv); if (!url) return usage('ping');
-        const u = new URL(url); const p = u.protocol.replace(':', '');
-        if (p.startsWith('mysql')) { console.log(JSON.stringify(await probeMySQL(url), null, 2)); return 0; }
-        if (p.startsWith('postgres') || p === 'pg') { console.log(JSON.stringify(await probePostgres(url), null, 2)); return 0; }
-        console.log('{"note":"generic ping not implemented"}'); return 0;
-    },
-
-
-    async 'snapshot:pull'(argv) {
-        const { url, out } = flags(argv); if (!url) return usage('snapshot:pull');
-        const snap = { version: 1, schemas: {} }; // Phase 1 placeholder
-        fs.writeFileSync(out || `snapshot.${Date.now()}.json`, JSON.stringify(snap, null, 2));
-        return 0;
-    },
-
-
-    async 'plan:diff'(argv) {
-        const { from, to, out } = flags(argv); if (!from || !to) return usage('plan:diff');
-        const A = JSON.parse(fs.readFileSync(from, 'utf8')); const B = JSON.parse(fs.readFileSync(to, 'utf8'));
-        const plan = diffSnapshots(A, B); fs.writeFileSync(out || 'plan.ir.json', JSON.stringify(plan, null, 2)); return 0;
-    },
-
-
-    async apply(argv) {
-        const { url, plan, execute, risk } = flags(argv); if (!url || !plan) return usage('apply');
-        const ir = JSON.parse(fs.readFileSync(plan, 'utf8'));
-        if (!execute) { console.log('--- DRY RUN ---'); console.log(JSON.stringify(ir, null, 2)); return 0; }
-        console.log(JSON.stringify(await applyPlan(url, ir, { riskBudget: risk || 'low' }), null, 2)); return 0;
-    },
+type TransportModule = {
+    probe: (url: string, timeoutMs?: number) => Promise<ProbeInfo>;
+    connect: (url: string) => Promise<ISqlxClient>;
 };
 
-
-main().catch(e => { console.error(e?.stack || e); process.exit(1); });
-
-
-async function main() { const [, , cmd, ...rest] = process.argv; const fn = commands[cmd] || help; const code = await fn(rest); process.exit(code); }
-
-
-async function help() {
-    console.log(`\nNuBlox SQLx — CLI\nUsage: nublox-sqlx <command> [options]\n\nCommands:\n ping --url <db-url>\n snapshot:pull --url <db-url> [-o file]\n plan:diff --from A.json --to B.json [-o plan.ir.json]\n apply --url <db-url> --plan plan.ir.json [--execute] [--risk low|medium|high]\n`);
-    return 0;
+function getTransport(dialect: 'mysql' | 'pg'): TransportModule {
+    return (dialect === 'mysql' ? Mysql : Pg) as unknown as TransportModule;
 }
 
+async function doPing(url: string, dialect: 'mysql' | 'pg') {
+    const t = getTransport(dialect);
+    const info = await t.probe(url, 2500);
+    console.log(JSON.stringify(info, null, 2));
+}
 
-function usage(name: string) { console.error(`Usage error: ${name}. Try: nublox-sqlx help`); return 1; }
-function flags(argv: string[]) { const out: Record<string, any> = {}; for (let i = 0; i < argv.length; i++) { const a = argv[i]; if (a.startsWith('--')) { const k = a.slice(2); const v = (i + 1 < argv.length && !argv[i + 1].startsWith('-')) ? argv[++i] : true; out[k] = v; } } return out; }
+async function doLearn(url: string, dialect: 'mysql' | 'pg') {
+    const t = getTransport(dialect);
+    const c = await t.connect(url);
+    try {
+        const sql = dialect === 'mysql' ? 'SELECT VERSION() AS version' : 'SELECT version() AS version';
+        const out = await c.query(sql);
+        console.log(JSON.stringify(out, null, 2));
+    } finally {
+        await c.close().catch(() => void 0);
+    }
+}
+
+async function doQuery(url: string, dialect: 'mysql' | 'pg', sql: string, params?: string) {
+    const t = getTransport(dialect);
+    const c = await t.connect(url);
+    try {
+        const parsedParams = params ? JSON.parse(params) : undefined;
+        const finalSql = normalizeParams(sql, dialect, parsedParams);
+        const out = await c.query(finalSql);
+        console.log(JSON.stringify(out, null, 2));
+    } finally {
+        await c.close().catch(() => void 0);
+    }
+}
+
+async function doSnapshotPull(url: string, dialect: 'mysql' | 'pg', outFile?: string) {
+    const t = getTransport(dialect);
+    const c = await t.connect(url);
+    try {
+        let rows: any[] = [];
+        if (dialect === 'mysql') {
+            const r = await c.query(`SELECT table_schema, table_name, table_type
+                               FROM information_schema.tables
+                               WHERE table_schema NOT IN ('mysql','performance_schema','information_schema','sys')`);
+            rows = r.rows;
+        } else {
+            const r = await c.query(`SELECT table_schema, table_name, table_type
+                               FROM information_schema.tables
+                               WHERE table_schema NOT IN ('pg_catalog','information_schema')`);
+            rows = r.rows;
+        }
+        const json = JSON.stringify({ dialect, tables: rows }, null, 2);
+        if (outFile) {
+            const fs = await import('node:fs');
+            fs.writeFileSync(outFile, json, 'utf8');
+            console.log(`wrote ${outFile}`);
+        } else {
+            console.log(json);
+        }
+    } finally {
+        await c.close().catch(() => void 0);
+    }
+}
+
+async function main() {
+    if (!cmd) {
+        console.error(`Usage:
+  sqlx <cmd> --url <conn> [--sql "..."] [--params "[...json...]"] [--out file]
+
+Commands:
+  ping           Probe capabilities without logging in
+  learn          Basic capability check via version()
+  query          Execute a one-off SQL
+  snapshot:pull  Dump a minimal table list
+`);
+        process.exit(2);
+    }
+
+    const url = requireArg(rest, 'url');
+    const dialect = parseDialect(url);
+
+    if (cmd === 'ping') return doPing(url, dialect);
+    if (cmd === 'learn') return doLearn(url, dialect);
+    if (cmd === 'query') {
+        const sql = requireArg(rest, 'sql');
+        const params = optionalArg(rest, 'params');
+        return doQuery(url, dialect, sql, params);
+    }
+    if (cmd === 'snapshot:pull') {
+        const out = optionalArg(rest, 'out');
+        return doSnapshotPull(url, dialect, out);
+    }
+
+    console.error(`Unknown command: ${cmd}`);
+    process.exit(2);
+}
+
+main().catch((e) => {
+    console.error(e && (e.stack || e.message) || String(e));
+    process.exit(1);
+});

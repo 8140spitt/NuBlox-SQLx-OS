@@ -1,21 +1,12 @@
 {
     "name": "@nublox/sqlx-cli",
-    "version": "0.1.0",
     "type": "module",
-    "bin": {
-        "nublox-sqlx": "dist/index.js",
-        "sqlx": "dist/index.js"
-    },
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
-    "scripts": {
-        "build": "tsc -p tsconfig.json",
-        "dev": "node --enable-source-maps dist/index.js",
-        "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
+    "bin": {
+        "sqlx": "dist/index.js"
     },
-    "dependencies": {
-        "@nublox/sqlx-core": "workspace:*",
-        "@nublox/sqlx-transport-mysql": "workspace:*",
-        "@nublox/sqlx-transport-pg": "workspace:*"
+    "scripts": {
+        "build": "tsc -p tsconfig.json"
     }
 }
