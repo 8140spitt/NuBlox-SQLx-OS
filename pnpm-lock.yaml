@@ -42,7 +42,17 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/node@22.18.10)(tsx@4.20.6)
 
-  packages/@nublox/sqlx-cli: {}
+  packages/@nublox/sqlx-cli:
+    dependencies:
+      '@nublox/sqlx-core':
+        specifier: workspace:*
+        version: link:../sqlx-core
+      '@nublox/sqlx-transport-mysql':
+        specifier: workspace:*
+        version: link:../sqlx-transport-mysql
+      '@nublox/sqlx-transport-pg':
+        specifier: workspace:*
+        version: link:../sqlx-transport-pg
 
   packages/@nublox/sqlx-core: {}
 

@@ -1,4 +1,6 @@
-#!/usr/bin/env node
+//sqlx-cli/src/index.ts
+
+#!/usr/bin / env node
 import { parseDialect, requireArg, optionalArg } from './resolve.js';
 import type { ISqlxClient, ProbeInfo } from '@nublox/sqlx-core';
 import { normalizeParams } from '@nublox/sqlx-core';

@@ -1,32 +1,33 @@
 {
-    "name": "@nublox/sqlx-transport-mysql",
-    "version": "0.1.0",
-    "description": "NuBlox SQLx MySQL transport (probe + client).",
-    "license": "MIT",
-    "type": "module",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
-    "exports": {
-        ".": {
-            "types": "./dist/index.d.ts",
-            "import": "./dist/index.js"
-        }
+  "name": "@nublox/sqlx-transport-mysql",
+  "version": "0.1.0",
+  "description": "NuBlox SQLx MySQL transport (probe + client).",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
-    "files": [
-        "dist",
-        "src",
-        "README.md",
-        "LICENSE"
-    ],
-    "sideEffects": false,
-    "scripts": {
-        "build": "tsc -p tsconfig.json",
-        "clean": "rimraf dist || rm -rf dist"
-    },
-    "dependencies": {
-        "@nublox/sqlx-core": "workspace:*"
-    },
-    "engines": {
-        "node": ">=18"
-    }
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist || rm -rf dist"
+  },
+  "dependencies": {
+    "@nublox/sqlx-core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=18"
+  }
 }

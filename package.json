@@ -2,9 +2,10 @@
   "name": "nublox_sqlx_os",
   "private": true,
   "version": "0.1.0",
-  "description": "NuBlox SQLx — dialect-agnostic DBMS core + CLI (Phase 1)",
+  "description": "NuBlox SQLx \u2014 dialect-agnostic DBMS core + CLI (Phase 1)",
   "license": "Apache-2.0",
   "workspaces": [
+    "packages/*",
     "packages/@nublox/*"
   ],
   "scripts": {
