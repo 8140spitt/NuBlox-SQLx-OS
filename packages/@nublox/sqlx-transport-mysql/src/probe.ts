@@ -2,12 +2,12 @@ import * as net from "net";
 import * as tls from "tls";
 import { URL } from "url";
 
-export type MySQLProbe = { serverVersion?: string; tlsAttempted: boolean; portOpen?: boolean; error?: string; capabilityBits?: number };
+export type MySQLProbe = { serverVersion?: string; tlsAttempted: boolean; portOpen?: boolean; error?: string; capabilityBits?: number; authPlugin?: string };
 
 export async function probeMySQL(urlString: string, timeoutMs = 3000): Promise<MySQLProbe> {
     const result: MySQLProbe = { tlsAttempted: false };
     let socket: net.Socket | tls.TLSSocket | undefined;
-    
+
     try {
         const url = new URL(urlString);
         const host = url.hostname || '127.0.0.1';
@@ -39,11 +39,30 @@ export async function probeMySQL(urlString: string, timeoutMs = 3000): Promise<M
                     }
                     result.serverVersion = `${serverVersion}`;
                     result.capabilityBits = (capHi << 16) | capLo;
+
+                    // Extract authentication plugin name from the end of the greeting packet
+                    // Skip to auth plugin data: after capabilities, auth_len, reserved(10), auth2
+                    let authPluginOff = off + 2 + 1 + 10; // Skip caps_hi + auth_len + reserved
+                    if (payload.length > authPluginOff) {
+                        // Skip auth2 data - find the null-terminated auth plugin name at the end
+                        let searchOff = authPluginOff;
+                        while (searchOff < payload.length && payload[searchOff] !== 0x00) searchOff++;
+                        if (searchOff < payload.length) searchOff++; // Skip the null terminator
+
+                        // Auth plugin name is null-terminated string at the end
+                        if (searchOff < payload.length) {
+                            const pluginEnd = payload.indexOf(0x00, searchOff);
+                            if (pluginEnd > searchOff) {
+                                result.authPlugin = payload.toString('utf8', searchOff, pluginEnd);
+                            }
+                        }
+                    }
+
                     socket?.end();
                     resolve();
-                } catch (e) { 
-                    socket?.destroy(); 
-                    reject(e as Error); 
+                } catch (e) {
+                    socket?.destroy();
+                    reject(e as Error);
                 }
             };
             const onConnect = () => { /* wait for server greeting */ };
@@ -59,9 +78,9 @@ export async function probeMySQL(urlString: string, timeoutMs = 3000): Promise<M
     } catch (err: any) {
         return { ...result, error: err?.message || String(err) };
     } finally {
-        try { 
-            socket?.destroy(); 
-        } catch { 
+        try {
+            socket?.destroy();
+        } catch {
             // ignore cleanup errors
         }
     }

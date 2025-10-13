@@ -12,10 +12,11 @@ export type FeatureMap = {
     timestampType: 'timestamp with time zone' | 'timestamp' | 'datetime';
     transactionalDDL: boolean; maxIdentLen: number;
     serverFingerprint?: string;
+    authMethods?: string[]; // Learned authentication methods
 };
 
 
-export async function learnFeatures(db: { query: (sql: string) => Promise<any> }): Promise<FeatureMap> {
+export async function learnFeatures(db: { query: (sql: string) => Promise<any> }, probeInfo?: { authPlugins?: string[]; dialect?: string; version?: string | null }): Promise<FeatureMap> {
     const q = async (sql: string) => db.query(sql).then(() => true, () => false);
     const quote: FeatureMap['quote'] = (await q('select 1 as "x"')) ? '"' : (await q('select 1 as `x`')) ? '`' : '[';
     const ifNotExists = await q('create table if not exists __probe_q (id int)');
@@ -34,7 +35,16 @@ export async function learnFeatures(db: { query: (sql: string) => Promise<any> }
     await q('create table __probe_alter (id int)');
     const hintOk = await q('alter table __probe_alter add column c int, algorithm=inplace, lock=none');
     await q('drop table if exists __probe_alter');
-    return { quote, ifExists, ifNotExists, jsonType, returning, upsert, onlineAlterHint: hintOk ? 'ALGORITHM=INPLACE,LOCK=NONE' : undefined, boolType: 'boolean', timestampType: 'timestamp', transactionalDDL: true, maxIdentLen: 63 };
+
+    // Include authentication methods learned from probe
+    const authMethods = probeInfo?.authPlugins;
+
+    return {
+        quote, ifExists, ifNotExists, jsonType, returning, upsert,
+        onlineAlterHint: hintOk ? 'ALGORITHM=INPLACE,LOCK=NONE' : undefined,
+        boolType: 'boolean', timestampType: 'timestamp', transactionalDDL: true, maxIdentLen: 63,
+        authMethods
+    };
 }
 
 

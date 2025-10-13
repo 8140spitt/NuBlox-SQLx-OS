@@ -7,6 +7,11 @@
     "declaration": true,
     "declarationDir": "./dist"
   },
+  "references": [
+    {
+      "path": "../sqlx-core"
+    }
+  ],
   "include": [
     "src"
   ]
