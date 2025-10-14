@@ -1,87 +1,148 @@
-import * as net from "net";
-import * as tls from "tls";
-import { URL } from "url";
+// @nublox/sqlx-transport-mysql/src/probe.ts
+import net from 'node:net';
+import tls from 'node:tls';
+import { URL } from 'node:url';
 
-export type MySQLProbe = { serverVersion?: string; tlsAttempted: boolean; portOpen?: boolean; error?: string; capabilityBits?: number; authPlugin?: string };
+export type ProbeInfo = {
+    dialect: 'mysql';
+    host: string;
+    port: number;
+    version?: string;
+    tls: { available: boolean; attempted: boolean };
+    authPlugin?: string;     // e.g., 'caching_sha2_password' | 'mysql_native_password'
+    capabilities?: string[]; // parsed flags (subset)
+    error?: string;
+};
 
-export async function probeMySQL(urlString: string, timeoutMs = 3000): Promise<MySQLProbe> {
-    const result: MySQLProbe = { tlsAttempted: false };
-    let socket: net.Socket | tls.TLSSocket | undefined;
+const DEFAULT_TIMEOUT_MS = 2500;
+
+function parseMysqlUrl(raw: string) {
+    const u = new URL(raw);
+    const host = u.hostname || '127.0.0.1';
+    const port = Number(u.port || 3306);
+    const ssl = u.searchParams.get('ssl'); // '0'|'1'
+    return { host, port, ssl: ssl === '1' };
+}
+
+// Minimal parse for handshake V10
+function parseHandshakeV10(buf: Buffer) {
+    // packet header (length3 + seq1) = 4 bytes -> payload follows
+    // payload starts with protocol_version (1) then nul-terminated server_version
+    const payload = buf.subarray(4);
+    const protocol = payload.readUInt8(0);
+    if (protocol !== 10) return {};
+
+    let off = 1;
+    const endVersion = payload.indexOf(0x00, off);
+    const version = payload.subarray(off, endVersion).toString('utf8');
+    off = endVersion + 1;
+
+    // connection_id (4)
+    off += 4;
+
+    // auth-plugin-data-part-1 (8) + filler (1)
+    off += 8 + 1;
+
+    // capability flags (lower 2 bytes)
+    const capLow = payload.readUInt16LE(off); off += 2;
+
+    // if more data
+    if (payload.length > off) {
+        const charset = payload.readUInt8(off); off += 1;
+        const statusFlags = payload.readUInt16LE(off); off += 2;
+        const capHigh = payload.readUInt16LE(off); off += 2;
+        const caps = (capHigh << 16) | capLow;
+
+        let authPluginName: string | undefined;
+        // auth-plugin-data length (1)
+        const authLen = payload.readUInt8(off); off += 1;
+        // 10 bytes reserved
+        off += 10;
+
+        // auth-plugin-data-part-2 (min 12)
+        const part2len = Math.max(12, authLen - 8);
+        off += part2len;
+
+        // optional plugin name (null-terminated)
+        const nulIdx = payload.indexOf(0x00, off);
+        if (nulIdx !== -1) {
+            authPluginName = payload.subarray(off, nulIdx).toString('utf8');
+        }
+
+        const capabilities: string[] = [];
+        const CAP = (bit: number) => (caps & (1 << bit)) !== 0;
+        if (CAP(5)) capabilities.push('LONG_PASSWORD');
+        if (CAP(9)) capabilities.push('CONNECT_WITH_DB');
+        if (CAP(15)) capabilities.push('SECURE_CONNECTION');
+        if (CAP(21)) capabilities.push('PLUGIN_AUTH');
+        if (CAP(23)) capabilities.push('SSL');
+        if (CAP(30)) capabilities.push('CLIENT_DEPRECATE_EOF');
+
+        return { version, authPlugin: authPluginName, capabilities };
+    }
+
+    return { version };
+}
+
+async function tcpProbe(host: string, port: number, timeoutMs: number): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+        const s = net.createConnection({ host, port });
+        const chunks: Buffer[] = [];
+        const to = setTimeout(() => {
+            s.destroy(new Error('timeout'));
+        }, timeoutMs);
+
+        s.on('data', (d) => chunks.push(d));
+        s.on('error', (e) => { clearTimeout(to); reject(e); });
+        s.on('close', () => {
+            clearTimeout(to);
+            resolve(Buffer.concat(chunks));
+        });
+    });
+}
+
+async function tlsProbe(host: string, port: number, timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+        const s = tls.connect({ host, port, servername: host });
+        const to = setTimeout(() => {
+            s.destroy();
+            resolve(false);
+        }, timeoutMs);
+
+        s.on('secureConnect', () => {
+            clearTimeout(to);
+            s.destroy();
+            resolve(true);
+        });
+        s.on('error', () => {
+            clearTimeout(to);
+            resolve(false);
+        });
+    });
+}
+
+export async function probe(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<ProbeInfo> {
+    const { host, port, ssl } = parseMysqlUrl(url);
+    const out: ProbeInfo = {
+        dialect: 'mysql',
+        host, port,
+        tls: { available: false, attempted: true }
+    };
 
     try {
-        const url = new URL(urlString);
-        const host = url.hostname || '127.0.0.1';
-        const port = Number(url.port) || (url.protocol === 'mysqls:' ? 33060 : 3306);
-        const useTLS = url.protocol === 'mysqls:' || url.searchParams.get('ssl') === '1' || url.searchParams.get('ssl') === 'true';
-        result.tlsAttempted = !!useTLS;
-
-        await new Promise<void>((resolve, reject) => {
-            let resolved = false;
-            const onError = (err: Error) => { if (!resolved) { resolved = true; reject(err); } };
-            const onTimeout = () => { if (!resolved) { resolved = true; reject(new Error('timeout')); } };
-            const onData = (data: Buffer) => {
-                if (resolved) return;
-                resolved = true;
-                try {
-                    if (data.length < 5) throw new Error('handshake too short');
-                    const payloadLen = data.readUIntLE(0, 3);
-                    const payload = data.subarray(4, 4 + payloadLen);
-                    const end = payload.indexOf(0x00, 1);
-                    const serverVersion = payload.toString('utf8', 1, end > 0 ? end : payload.length);
-                    // capability flags lower @ off after conn id(4) + auth1(8) + filler(1)
-                    let off = (end > 0 ? end + 1 : payload.length);
-                    off += 4 + 8 + 1;
-                    let capLo = 0, capHi = 0;
-                    if (payload.length >= off + 2) {
-                        capLo = payload.readUInt16LE(off); off += 2;
-                        off += 1 + 2; // charset + status
-                        if (payload.length >= off + 2) capHi = payload.readUInt16LE(off);
-                    }
-                    result.serverVersion = `${serverVersion}`;
-                    result.capabilityBits = (capHi << 16) | capLo;
-
-                    // Extract authentication plugin name from the end of the greeting packet
-                    // Skip to auth plugin data: after capabilities, auth_len, reserved(10), auth2
-                    let authPluginOff = off + 2 + 1 + 10; // Skip caps_hi + auth_len + reserved
-                    if (payload.length > authPluginOff) {
-                        // Skip auth2 data - find the null-terminated auth plugin name at the end
-                        let searchOff = authPluginOff;
-                        while (searchOff < payload.length && payload[searchOff] !== 0x00) searchOff++;
-                        if (searchOff < payload.length) searchOff++; // Skip the null terminator
-
-                        // Auth plugin name is null-terminated string at the end
-                        if (searchOff < payload.length) {
-                            const pluginEnd = payload.indexOf(0x00, searchOff);
-                            if (pluginEnd > searchOff) {
-                                result.authPlugin = payload.toString('utf8', searchOff, pluginEnd);
-                            }
-                        }
-                    }
-
-                    socket?.end();
-                    resolve();
-                } catch (e) {
-                    socket?.destroy();
-                    reject(e as Error);
-                }
-            };
-            const onConnect = () => { /* wait for server greeting */ };
-            socket = useTLS ? tls.connect({ host, port, rejectUnauthorized: false }, onConnect) : net.connect({ host, port }, onConnect);
-            socket.setTimeout(timeoutMs, onTimeout);
-            socket.once('error', onError);
-            socket.once('data', onData);
-            socket.once('close', () => { if (!resolved) { resolved = true; resolve(); } });
-        });
-
-        result.portOpen = true;
-        return result;
-    } catch (err: any) {
-        return { ...result, error: err?.message || String(err) };
-    } finally {
-        try {
-            socket?.destroy();
-        } catch {
-            // ignore cleanup errors
+        // TLS availability (unless explicitly disabled in URL)
+        if (!ssl) {
+            out.tls.available = await tlsProbe(host, port, timeoutMs);
+        } else {
+            out.tls.available = true;
         }
+
+        // Plain TCP to read initial handshake and infer auth plugin + caps
+        const buf = await tcpProbe(host, port, timeoutMs);
+        const parsed = parseHandshakeV10(buf);
+        Object.assign(out, parsed);
+    } catch (e: any) {
+        out.error = e?.message || String(e);
     }
+    return out;
 }

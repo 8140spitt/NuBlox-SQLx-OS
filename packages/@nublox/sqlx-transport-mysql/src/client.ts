@@ -133,20 +133,16 @@ export class MySQLClient implements ISqlxClient {
         const CLIENT_PROTOCOL_41 = 1 << 9, SECURE_CONNECTION = 1 << 15, PLUGIN_AUTH = 1 << 19, CONNECT_WITH_DB = 1 << 3, MULTI_RESULTS = 1 << 17;
         const caps = CLIENT_PROTOCOL_41 | SECURE_CONNECTION | PLUGIN_AUTH | MULTI_RESULTS | (this.db ? CONNECT_WITH_DB : 0);
         const maxPacket = 0x01000000; const coll = 0x21; // utf8_general_ci
-        // 🧠 Feature Learner: Use appropriate scrambling based on detected auth plugin
-        const authPlugin = learnedAuthPlugin || 'caching_sha2_password';
-        const scrambledPass = pass ? (
-            authPlugin === 'mysql_native_password' ? scramble(pass, this.salt) : scrambleSha2(pass, this.salt)
-        ) : Buffer.alloc(0);
-
-        console.log('🧠 Using learned auth method:', authPlugin);
+        // For MySQL 9.x with caching_sha2_password, we need SHA-256 based auth
+        // Try with proper password scrambling, or empty if no password
+        const scrambledPass = pass ? scrambleSha2(pass, this.salt) : Buffer.alloc(0);
         const body = Buffer.concat([
             u32le(caps), u32le(maxPacket), Buffer.from([coll]), Buffer.alloc(23, 0),
             cstr(user),
             Buffer.from([scrambledPass.length]),
             scrambledPass,
             this.db ? cstr(this.db) : Buffer.alloc(0),
-            cstr(learnedAuthPlugin || 'caching_sha2_password') // Use the learned auth plugin or fallback
+            cstr('caching_sha2_password') // Use the auth plugin the server requested
         ]);
 
         console.log('Sending auth packet, user:', user, 'db:', this.db);
