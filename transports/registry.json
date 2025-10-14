@@ -1,5 +1,4 @@
 {
-  "$schema": "https://schema.nublox.dev/sqlx/transport-registry.v1.json",
   "families": {
     "postgresql": {
       "pack": "./pg.tdl.json"
