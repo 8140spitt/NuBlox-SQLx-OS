@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.nublox.dev/sqlx/transport-registry.v1.json",
+  "families": {
+    "postgresql": {
+      "pack": "./pg.tdl.json"
+    },
+    "postgres": {
+      "pack": "./pg.tdl.json"
+    },
+    "mysql": {
+      "pack": "./mysql.tdl.json"
+    },
+    "mariadb": {
+      "pack": "./mysql.tdl.json"
+    },
+    "sqlite": {
+      "pack": "./sqlite.tdl.json"
+    }
+  }
+}

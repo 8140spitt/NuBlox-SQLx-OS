@@ -1,28 +1,15 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "skipLibCheck": true,
-    "declaration": true,
     "lib": [
       "ES2022"
     ],
-    "types": [
-      "node"
-    ],
-    "baseUrl": ".",
-    "paths": {
-      "@nublox/sqlx-core": [
-        "packages/@nublox/sqlx-core/src/index.ts"
-      ],
-      "@nublox/sqlx-transport-mysql": [
-        "packages/@nublox/sqlx-transport-mysql/src/index.ts"
-      ],
-      "@nublox/sqlx-transport-pg": [
-        "packages/@nublox/sqlx-transport-pg/src/index.ts"
-      ]
-    }
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "declaration": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true
   }
 }

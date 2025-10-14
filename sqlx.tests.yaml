@@ -1,0 +1,11 @@
+version: 1
+expect:
+  ddl:
+    online_alter_column: true
+    concurrent_index_create: true
+  features:
+    json_type: true
+    merge_statement: prefer_emulated
+limits:
+  max_identifier_len: ">= 63"
+  max_params: ">= 32767"

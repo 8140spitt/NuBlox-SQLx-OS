@@ -1,5 +1,5 @@
 {
-  "name": "@nublox/sqlx-cli",
+  "name": "@nublox/sqlx-planner",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
