@@ -2,7 +2,7 @@ import type { Session, Transport } from '@nublox/sqlx-transport';
 import type { CapabilityMatrix } from '@nublox/sqlx-flo';
 
 export type IRSchemaSnapshot = { objects: any[] };
-export type PlanStep = { op: string; sql?: string; rationale?: string };
+export type PlanStep = { op: string; sql?: string; rationale?: string; rollbackSql?: string };
 export type Plan = { steps: PlanStep[]; risk: 'low'|'med'|'high'; rationale: string[] };
 export type ApplyReport = { ok: boolean; startedAt: string; finishedAt?: string; actions: any[] };
 export type ImproveGoals = { reduceLatencyPct?: number; reduceStoragePct?: number };
@@ -26,9 +26,9 @@ export function createPlanner(caps: CapabilityMatrix, transport: Transport): Pla
     async schemaImprove(_session, goals) {
       const steps: PlanStep[] = [];
       if (caps.features.concurrentIndexCreate) {
-        steps.push({ op: 'create_index', sql: 'CREATE INDEX CONCURRENTLY idx_stub ON t(c)', rationale: 'concurrent available' });
+        steps.push({ op: 'create_index', sql: 'CREATE INDEX CONCURRENTLY idx_stub ON t(c)', rollbackSql: 'DROP INDEX CONCURRENTLY idx_stub', rationale: 'concurrent available' });
       } else {
-        steps.push({ op: 'create_index', sql: 'CREATE INDEX idx_stub ON t(c)', rationale: 'fallback path' });
+        steps.push({ op: 'create_index', sql: 'CREATE INDEX idx_stub ON t(c)', rollbackSql: 'DROP INDEX idx_stub', rationale: 'fallback path' });
       }
       if (goals?.reduceLatencyPct) {
         steps.push({ op: 'analyze', sql: 'ANALYZE', rationale: 'improve planner stats' });

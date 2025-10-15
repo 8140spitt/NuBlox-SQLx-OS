@@ -7,10 +7,12 @@
       "pack": "./pg.tdl.json"
     },
     "mysql": {
-      "pack": "./mysql.tdl.json"
+      "pack": "./mysql.tdl.json",
+      "module": "@nublox/sqlx-transport-mysqlnative"
     },
     "mariadb": {
-      "pack": "./mysql.tdl.json"
+      "pack": "./mysql.tdl.json",
+      "module": "@nublox/sqlx-transport-mysqlnative"
     },
     "sqlite": {
       "pack": "./sqlite.tdl.json"
