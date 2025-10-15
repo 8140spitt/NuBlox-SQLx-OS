@@ -58,38 +58,11 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
-  packages/@nublox/sqlx-copilot:
-    devDependencies:
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.0(typescript@5.9.3)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-
   packages/@nublox/sqlx-flo:
     dependencies:
       '@nublox/sqlx-transport':
         specifier: workspace:*
         version: link:../sqlx-transport
-    devDependencies:
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.0(typescript@5.9.3)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-
-  packages/@nublox/sqlx-ir:
-    devDependencies:
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.0(typescript@5.9.3)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-
-  packages/@nublox/sqlx-observe:
     devDependencies:
       tsup:
         specifier: ^8.0.0
@@ -114,45 +87,13 @@ importers:
         specifier: ^5.6.0
         version: 5.9.3
 
-  packages/@nublox/sqlx-rdm:
-    dependencies:
-      '@nublox/sqlx-observe':
-        specifier: workspace:*
-        version: link:../sqlx-observe
-    devDependencies:
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.0(typescript@5.9.3)
-      typescript:
-        specifier: ^5.3.0
-        version: 5.9.3
-
-  packages/@nublox/sqlx-security:
-    devDependencies:
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.0(typescript@5.9.3)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-
-  packages/@nublox/sqlx-sng:
-    dependencies:
-      '@nublox/sqlx-ir':
-        specifier: workspace:*
-        version: link:../sqlx-ir
-    devDependencies:
-      tsup:
-        specifier: ^8.0.0
-        version: 8.5.0(typescript@5.9.3)
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-
   packages/@nublox/sqlx-transport:
     devDependencies:
+      '@types/node':
+        specifier: ^22.7.5
+        version: 22.18.10
       tsup:
-        specifier: ^8.0.0
+        specifier: ^8.5.0
         version: 8.5.0(typescript@5.9.3)
       typescript:
         specifier: ^5.6.0

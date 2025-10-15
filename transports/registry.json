@@ -5,15 +5,6 @@
     },
     "mariadb": {
       "pack": "./mysql.wire.json"
-    },
-    "postgres": {
-      "pack": "./pg.wire.json"
-    },
-    "postgresql": {
-      "pack": "./pg.wire.json"
-    },
-    "sqlite": {
-      "pack": "./sqlite.wire.json"
     }
   }
 }

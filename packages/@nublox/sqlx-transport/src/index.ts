@@ -14,11 +14,11 @@ export interface ExecResult {
 }
 
 export type Transport = {
-  handshake: (packPath: string, url: string, opts?: any) => Promise<{ session: Session }>;
-  exec: (session: Session, req: { sql: string; params?: unknown[] }) => Promise<ExecResult>;
-  explain: (session: Session, sql: string) => Promise<any>;
-  ping: (session: Session) => Promise<void>;
-  close: (session: Session) => Promise<void>;
+  handshake(packPath: string, url: string, opts?: any): Promise<{ session: Session }>;
+  exec(session: Session, req: { sql: string; params?: unknown[] }): Promise<ExecResult>;
+  explain(session: Session, sql: string): Promise<any>;
+  ping(session: Session): Promise<void>;
+  close(session: Session): Promise<void>;
 };
 
 export type HandshakeAdvisor = {

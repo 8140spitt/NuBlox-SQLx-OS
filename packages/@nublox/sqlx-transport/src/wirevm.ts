@@ -24,26 +24,16 @@ export interface Transport {
 
 type WirePack = {
     name: string;
-    framing: { // packet header format
-        kind: 'mysql-3byte-len';
-        charsetDefault?: number; // mysql collation id
-    };
-    caps: {
-        clientSSLFlag: number;
-    };
-    commands: {
-        PING: number;
-        QUERY: number;
-    };
+    framing: { kind: 'mysql-3byte-len'; charsetDefault?: number };
+    caps: { clientSSLFlag: number };
+    commands: { PING: number; QUERY: number };
     handshake: {
         greeting: 'mysql-v10';
-        // which fields we parse from greeting (descriptor-driven)
         fields: string[];
-        // how to choose auth
         auth: {
-            pluginField: string; // e.g. "plugin"
-            algos: string[];     // e.g. ["caching_sha2_password","mysql_native_password"]
-            tlsRequiredFor?: string[]; // algos that require TLS in MVP
+            pluginField: string;
+            algos: string[];
+            tlsRequiredFor?: string[];
         }
     };
 };
@@ -76,20 +66,14 @@ class PacketCodec {
                 acc = Buffer.concat([acc, chunk]);
                 if (acc.length >= n) {
                     this.s.off('data', onData);
-                    const out = acc.subarray(0, n);
-                    this.carry = acc.subarray(n) as Buffer;
+                    // IMPORTANT: return copies, not views, to satisfy Buffer<ArrayBuffer> typing
+                    const out = Buffer.from(acc.subarray(0, n));
+                    this.carry = Buffer.from(acc.subarray(n));
                     resolve(out);
                 }
             };
-            const die = (e: any) => {
-                cleanup();
-                reject(e || new Error('socket closed'));
-            };
-            const cleanup = () => {
-                this.s.off('data', onData);
-                this.s.off('error', die);
-                this.s.off('close', die);
-            };
+            const die = (e: any) => { cleanup(); reject(e || new Error('socket closed')); };
+            const cleanup = () => { this.s.off('data', onData); this.s.off('error', die); this.s.off('close', die); };
             this.s.on('data', onData);
             this.s.once('error', die);
             this.s.once('close', die);
@@ -97,8 +81,6 @@ class PacketCodec {
     }
 }
 
-
-// ---- Minimal “auth algorithm” library (referenced by name from the pack)
 const AuthAlgos: Record<string, (password: string, salt: Buffer, ctx: { tls: boolean }) => Buffer> = {
     mysql_native_password(password, salt) {
         const p = Buffer.from(password || '', 'utf8');
@@ -116,9 +98,7 @@ const AuthAlgos: Record<string, (password: string, salt: Buffer, ctx: { tls: boo
     }
 };
 
-function isLocalHost(h: string) {
-    return ['localhost', '127.0.0.1', '::1'].includes(h);
-}
+function isLocalHost(h: string) { return ['localhost', '127.0.0.1', '::1'].includes(h); }
 
 async function upgradeTLS(sock: net.Socket, host: string): Promise<tls.TLSSocket> {
     return await new Promise<tls.TLSSocket>((res, rej) => {
@@ -129,7 +109,7 @@ async function upgradeTLS(sock: net.Socket, host: string): Promise<tls.TLSSocket
 
 function parseGreetingMySQLv10(pkt: Buffer) {
     let i = 0;
-    const protocol = pkt[i++]; // not used
+  /* const protocol = */ pkt[i++]; // not used
     const verEnd = pkt.indexOf(0, i);
     const versionText = pkt.toString('utf8', i, verEnd); i = verEnd + 1;
     const connId = pkt.readUInt32LE(i); i += 4;
@@ -159,7 +139,7 @@ export async function loadWirePack(packPath: string): Promise<WirePack> {
     return JSON.parse(raw);
 }
 
-export function createWireTransport(): Transport {
+export default function createWireTransport(): Transport {
     let PACK: WirePack;
 
     async function handshake(packPath: string, rawUrl: string, opts?: {
@@ -185,11 +165,11 @@ export function createWireTransport(): Transport {
         });
         const codec0 = new PacketCodec(base);
 
-        // 2) Read greeting (descriptor-driven)
+        // 2) Greeting
         const gPkt = await codec0.readPacket();
-        const g = parseGreetingMySQLv10(gPkt); // from PACK.handshake.greeting === 'mysql-v10'
+        const g = parseGreetingMySQLv10(gPkt);
 
-        // 3) Ask FLO for client caps
+        // 3) FLO: client caps
         const advisedCaps = opts?.advisor?.proposeClientCaps({
             serverCaps: g.serverCaps,
             authPlugin: g.plugin,
@@ -198,7 +178,7 @@ export function createWireTransport(): Transport {
             wantTLS: wantTLSPref
         }, opts?.policy) ?? 0;
 
-        // 4) TLS upgrade if asked (CLIENT_SSL)
+        // 4) Optional TLS (CLIENT_SSL)
         const clientSSLFlag = PACK.caps.clientSSLFlag;
         let sock: net.Socket | tls.TLSSocket = base;
         if (advisedCaps & clientSSLFlag) {
@@ -211,7 +191,7 @@ export function createWireTransport(): Transport {
         }
         const codec = new PacketCodec(sock);
 
-        // 5) Choose auth algo from the PACK (learn-first order)
+        // 5) Try auth algos from pack
         const algos = PACK.handshake.auth.algos;
         const tlsRequiredFor = new Set(PACK.handshake.auth.tlsRequiredFor ?? []);
         let lastError: any;
@@ -219,7 +199,6 @@ export function createWireTransport(): Transport {
         for (const algoName of algos) {
             try {
                 if (tlsRequiredFor.has(algoName) && !(sock as any).encrypted) {
-                    // negotiate TLS now
                     const sslReq = Buffer.alloc(32, 0);
                     sslReq.writeUInt32LE(advisedCaps | clientSSLFlag, 0);
                     sslReq.writeUInt32LE(1 << 24, 4);
@@ -230,7 +209,7 @@ export function createWireTransport(): Transport {
                 const algo = AuthAlgos[algoName];
                 if (!algo) continue;
 
-                // 6) Build Handshake Response 41
+                // Handshake Response 41
                 const fixed = Buffer.alloc(4 + 4 + 1 + 23, 0);
                 const finalCaps = (advisedCaps | (((sock as any).encrypted) ? clientSSLFlag : 0)) >>> 0;
                 fixed.writeUInt32LE(finalCaps, 0);
@@ -256,7 +235,6 @@ export function createWireTransport(): Transport {
                     const msg = p.subarray(9).toString('utf8');
                     throw new Error(`Auth error ${code}: ${msg}`);
                 }
-                // if server wants more (0x01/0xFE) and we’re under TLS, send NUL-term password fallback
                 if ((p[0] === 0xFE || p[0] === 0x01) && (sock as any).encrypted) {
                     codec.writePacket(Buffer.concat([Buffer.from(password || '', 'utf8'), Buffer.from([0x00])]));
                     const p2 = await codec.readPacket();
@@ -278,9 +256,9 @@ export function createWireTransport(): Transport {
                 return { session };
             } catch (e) {
                 lastError = e;
-                // try next algo
             }
         }
+
         throw lastError ?? new Error('No auth strategy succeeded');
     }
 
@@ -298,7 +276,6 @@ export function createWireTransport(): Transport {
         if (p[0] === 0x00) {
             return { rows: [], rowCount: p.readUIntLE(1, Math.min(3, p.length - 1)) || 0 };
         }
-        // resultset: skip column defs
         let colCount = p[0];
         for (let i = 0; i < colCount; i++) await codec.readPacket();
         const rows: any[] = [];
@@ -354,4 +331,3 @@ export function createWireTransport(): Transport {
 
     return { handshake, exec, explain, ping, close };
 }
-export default createWireTransport;
