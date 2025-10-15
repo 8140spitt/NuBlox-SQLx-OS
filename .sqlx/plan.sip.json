@@ -1,0 +1,19 @@
+{
+  "steps": [
+    {
+      "op": "create_index",
+      "sql": "CREATE INDEX idx_stub ON t(c)",
+      "rollbackSql": "DROP INDEX idx_stub",
+      "rationale": "fallback path"
+    },
+    {
+      "op": "analyze",
+      "sql": "ANALYZE",
+      "rationale": "improve planner stats"
+    }
+  ],
+  "risk": "low",
+  "rationale": [
+    "auto SIP (stub)"
+  ]
+}

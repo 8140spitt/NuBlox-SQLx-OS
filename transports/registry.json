@@ -8,11 +8,15 @@
     },
     "mysql": {
       "pack": "./mysql.tdl.json",
-      "module": "@nublox/sqlx-transport-mysqlnative"
+      "transports": [
+        "mysql-wire-pack"
+      ]
     },
     "mariadb": {
       "pack": "./mysql.tdl.json",
-      "module": "@nublox/sqlx-transport-mysqlnative"
+      "transports": [
+        "mysql-wire-pack"
+      ]
     },
     "sqlite": {
       "pack": "./sqlite.tdl.json"

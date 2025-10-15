@@ -12,7 +12,9 @@
     "test": "echo test"
   },
   "dependencies": {
-    "@nublox/sqlx": "workspace:*"
+    "@nublox/sqlx": "workspace:*",
+    "@nublox/sqlx-transport": "workspace:*",
+    "@nublox/sqlx-flo": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
