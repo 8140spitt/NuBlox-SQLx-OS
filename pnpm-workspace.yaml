@@ -1,4 +1,8 @@
 packages:
-  - packages/@nublox/*
-  - examples/*
+  - packages/@nublox/sqlx
+  - packages/@nublox/sqlx-cli
+  - packages/@nublox/sqlx-flo
+  - packages/@nublox/sqlx-planner
+  - packages/@nublox/sqlx-transport
   - apps/*
+  - examples/*

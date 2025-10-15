@@ -1,25 +1,19 @@
 {
   "families": {
-    "postgresql": {
-      "pack": "./pg.tdl.json"
-    },
-    "postgres": {
-      "pack": "./pg.tdl.json"
-    },
     "mysql": {
-      "pack": "./mysql.tdl.json",
-      "transports": [
-        "mysql-wire-pack"
-      ]
+      "pack": "./mysql.wire.json"
     },
     "mariadb": {
-      "pack": "./mysql.tdl.json",
-      "transports": [
-        "mysql-wire-pack"
-      ]
+      "pack": "./mysql.wire.json"
+    },
+    "postgres": {
+      "pack": "./pg.wire.json"
+    },
+    "postgresql": {
+      "pack": "./pg.wire.json"
     },
     "sqlite": {
-      "pack": "./sqlite.tdl.json"
+      "pack": "./sqlite.wire.json"
     }
   }
 }

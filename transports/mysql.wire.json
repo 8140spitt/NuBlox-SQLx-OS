@@ -1,0 +1,34 @@
+{
+    "name": "mysql-wire-pack",
+    "framing": {
+        "kind": "mysql-3byte-len",
+        "charsetDefault": 45
+    },
+    "caps": {
+        "clientSSLFlag": 134217728
+    },
+    "commands": {
+        "PING": 14,
+        "QUERY": 3
+    },
+    "handshake": {
+        "greeting": "mysql-v10",
+        "fields": [
+            "versionText",
+            "connId",
+            "serverCaps",
+            "plugin",
+            "salt"
+        ],
+        "auth": {
+            "pluginField": "plugin",
+            "algos": [
+                "caching_sha2_password",
+                "mysql_native_password"
+            ],
+            "tlsRequiredFor": [
+                "caching_sha2_password"
+            ]
+        }
+    }
+}

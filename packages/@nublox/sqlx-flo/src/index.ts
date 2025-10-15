@@ -1,6 +1,7 @@
 import type { Session, Transport } from '@nublox/sqlx-transport';
 import { loadTDL } from './tdl';
 
+
 export interface CapabilityMatrix {
   version: string;
   features: Record<string, boolean | string | number>;
