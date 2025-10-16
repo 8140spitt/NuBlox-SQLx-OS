@@ -1,0 +1,35 @@
+{
+  "family": "mysql",
+  "hello": {
+    "startsWithHex": "0a",
+    "versionRegex": "^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)"
+  },
+  "capabilities": {
+    "features": {
+      "concurrentIndexCreate": false,
+      "alterColumnOnline": true
+    },
+    "limits": {
+      "maxIdentifierLen": 63,
+      "maxParams": 32767
+    },
+    "sql": {
+      "supports": [
+        "cte",
+        "window",
+        "json"
+      ],
+      "reservedWords": []
+    },
+    "security": {
+      "tls": "on",
+      "trust": "system"
+    }
+  },
+  "auth": {
+    "plugins": [
+      "caching_sha2_password",
+      "mysql_native_password"
+    ]
+  }
+}

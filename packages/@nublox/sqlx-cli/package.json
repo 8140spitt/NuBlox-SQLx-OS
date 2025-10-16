@@ -11,14 +11,13 @@
     "lint": "echo lint",
     "test": "echo test"
   },
-  "dependencies": {
-    "@nublox/sqlx": "workspace:*",
-    "@nublox/sqlx-transport": "workspace:*",
-    "@nublox/sqlx-flo": "workspace:*"
-  },
   "devDependencies": {
-    "tsup": "^8.0.0",
-    "typescript": "^5.6.0"
+    "tsup": "^8.5.0",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.8.1"
+  },
+  "dependencies": {
+    "@nublox/sqlx": "workspace:*"
   },
   "bin": {
     "sqlx": "dist/index.js"

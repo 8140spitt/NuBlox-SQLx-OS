@@ -1,16 +1,13 @@
 {
-  "name": "nublox-sqlx-os",
+  "name": "nublox-sqlx-os-starter",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "type": "module",
   "scripts": {
-    "build": "pnpm -r build",
-    "dev": "pnpm -r --parallel dev",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
+    "build": "echo root",
+    "clean": "rimraf node_modules && rimraf packages/**/dist"
   },
   "devDependencies": {
-    "@types/node": "^22.18.10",
-    "tsup": "^8.5.0",
-    "typescript": "^5.9.3"
+    "rimraf": "^5.0.7"
   }
 }

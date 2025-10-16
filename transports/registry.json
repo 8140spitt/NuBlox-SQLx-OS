@@ -1,10 +1,13 @@
 {
-  "families": {
-    "mysql": {
-      "pack": "./mysql.wire.json"
-    },
-    "mariadb": {
-      "pack": "./mysql.wire.json"
-    }
+  "mysql": {
+    "name": "mysql",
+    "schemes": [
+      "mysql",
+      "mariadb"
+    ],
+    "config": "mysql.config.json",
+    "defaultPorts": [
+      3306
+    ]
   }
 }

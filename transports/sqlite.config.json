@@ -1,0 +1,17 @@
+{
+  "family": "sqlite",
+  "defaultFileExtensions": [
+    ".db",
+    ".sqlite3"
+  ],
+  "sql": {
+    "features": [
+      "cte",
+      "json"
+    ],
+    "limits": {
+      "maxIdentifierLen": 63,
+      "maxParams": 999
+    }
+  }
+}
