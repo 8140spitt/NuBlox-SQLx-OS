@@ -60,4 +60,63 @@ function getFamilyFile(family: string) {
   return abs;
 }
 
-// keep using getFamilyFile/loadRegistry where you already do
+// Types
+export interface CapabilityProfile {
+  wireVersion?: string;
+  auth?: string[] | { methods: string[] };
+  features?: string[];
+  maxIdentifierLen?: number;
+  maxParams?: number;
+  security?: Record<string, any>;
+}
+
+export interface TransportConfig {
+  family: string;
+  match?: {
+    defaultPorts?: number[];
+    helloStartsWithHex?: string;
+  };
+  defaultPorts?: number[];
+  hello?: {
+    startsWithHex?: string;
+  };
+  capabilities: CapabilityProfile;
+  auth?: {
+    methods: string[];
+  };
+}
+
+// URL detection functions
+export function detectFamilyFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const protocol = parsed.protocol.replace(':', '');
+
+    // Handle common protocol mappings
+    const protocolMap: Record<string, string> = {
+      'mysql': 'mysql',
+      'mariadb': 'mariadb',
+      'postgres': 'postgres',
+      'postgresql': 'postgres',
+      'sqlite': 'sqlite'
+    };
+
+    return protocolMap[protocol] || null;
+  } catch {
+    return null;
+  }
+}
+
+export function capabilityFromFamily(family: string): CapabilityProfile {
+  try {
+    const configPath = getFamilyFile(family);
+    const config: TransportConfig = loadJSON(configPath);
+    return config.capabilities;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not load capabilities for family "${family}": ${message}`);
+  }
+}
+
+// Export utility functions
+export { resolveTransportsDir, loadRegistry, getFamilyFile }

@@ -4,14 +4,12 @@
     ".db",
     ".sqlite3"
   ],
-  "sql": {
+  "capabilities": {
     "features": [
       "cte",
       "json"
     ],
-    "limits": {
-      "maxIdentifierLen": 63,
-      "maxParams": 999
-    }
+    "maxIdentifierLen": 63,
+    "maxParams": 999
   }
 }

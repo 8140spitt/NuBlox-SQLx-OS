@@ -2,7 +2,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const from = path.resolve(__dirname, "..", "transports");
+const from = path.resolve(__dirname, "..", "..", "..", "..", "transports");
 const to = path.resolve(__dirname, "..", "dist", "transports");
 
 if (!fs.existsSync(from)) {

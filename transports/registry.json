@@ -2,5 +2,6 @@
   "mysql": "./mysql.config.json",
   "mariadb": "./mysql.config.json",
   "postgres": "./pg.config.json",
-  "postgresql": "./pg.config.json"
+  "postgresql": "./pg.config.json",
+  "sqlite": "./sqlite.config.json"
 }
