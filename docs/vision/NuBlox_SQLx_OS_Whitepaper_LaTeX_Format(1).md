@@ -95,8 +95,6 @@ Properties:
 - Self-healing restarts and live migration
 
 
----
-
 # 5.3 Deployment Topology and Environment Awareness (Visuals)
 
 Below visuals illustrate how SQLx OS discovers and orchestrates **local**, **remote**, **containerized**, and **cloud-managed** databases through the control plane.
