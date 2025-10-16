@@ -1,30 +1,21 @@
 {
-  "name": "postgresql",
-  "match": {
-    "defaultPorts": [5432],
-    "clientFirst": true
-  },
-  "capabilityFlags": {
-    "PROTO_FE_BE": 1
-  },
+  "family": "postgres",
+  "defaultPorts": [
+    5432
+  ],
   "hello": {
-    "note": "PostgreSQL uses client-initiated StartupMessage; no server hello to parse.",
-    "capabilities": []
+    "startsWithHex": "52"
+  },
+  "capabilities": {
+    "maxIdentifierLen": 63,
+    "maxParams": 32767
   },
   "auth": {
-    "methods": ["md5", "scram-sha-256", "password", "gss", "sspi"],
-    "negotiation": "server_selects"
-  },
-  "sql": {
-    "supports": ["cte", "window", "jsonb"],
-    "reservedWords": []
-  },
-  "limits": {
-    "maxIdentifierLen": 63,
-    "maxParams": 65535
-  },
-  "security": {
-    "tls": "starttls-optional",
-    "trust": "system"
+    "methods": [
+      "md5",
+      "scram-sha-256",
+      "password",
+      "trust"
+    ]
   }
 }

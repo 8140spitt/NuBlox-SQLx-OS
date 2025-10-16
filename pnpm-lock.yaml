@@ -81,13 +81,13 @@ importers:
   packages/@nublox/sqlx-transport:
     devDependencies:
       '@types/node':
-        specifier: ^22.8.1
+        specifier: ^22.7.5
         version: 22.18.10
       tsup:
         specifier: ^8.5.0
         version: 8.5.0(typescript@5.9.3)
       typescript:
-        specifier: ^5.6.3
+        specifier: ^5.6.0
         version: 5.9.3
 
 packages:

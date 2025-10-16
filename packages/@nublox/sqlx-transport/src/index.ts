@@ -1,193 +1,63 @@
-// packages/@nublox/sqlx-transport/src/index.ts
+// at top
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-export type CapabilityProfile = {
-  version?: string;
-  features?: Record<string, boolean>;
-  limits?: { maxIdentifierLen?: number; maxParams?: number };
-  sql?: { supports?: string[]; reservedWords?: string[] };
-  security?: { tls?: "on" | "off" | "starttls-optional"; trust?: "system" | "none" };
-};
-
-type Registry = {
-  families: Record<
-    string,
-    {
-      file: string;
-      schemes?: string[];
-      defaultPorts?: number[];
-    }
-  >;
-};
-
-type FamilyConfig = {
-  name: string;
-  match?: {
-    defaultPorts?: number[];
-    helloStartsWithHex?: string;
-    clientFirst?: boolean;
-  };
-  capabilityFlags?: Record<string, number>;
-  hello?: {
-    recv?: { max?: number };
-    parse?: unknown[];
-    capabilities?: Array<{ when?: string; set?: string }>;
-  };
-  auth?: {
-    plugins?: string[];
-    methods?: string[];
-    negotiation?: "server_selects" | "client_selects";
-  };
-  sql?: { supports?: string[]; reservedWords?: string[] };
-  limits?: { maxIdentifierLen?: number; maxParams?: number };
-  security?: { tls?: "on" | "off" | "starttls-optional"; trust?: "system" | "none" };
-};
-
-function isNonEmptyString(x: unknown): x is string {
-  return typeof x === "string" && x.length > 0;
+function fileExists(p: string) {
+  try { fs.accessSync(p, fs.constants.R_OK); return true; } catch { return false; }
 }
 
-function pathExists(p: string): boolean {
-  try {
-    fs.accessSync(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Find the repo root "transports" directory by trying:
- * 1) SQLX_TRANSPORTS_DIR
- * 2) ./transports relative to CWD
- * 3) Walk up from CWD until we find transports/registry.json
- */
 function resolveTransportsDir(): string {
-  const fromEnv = process.env.SQLX_TRANSPORTS_DIR;
+  // 1) explicit override
+  const envDir = process.env.SQLX_TRANSPORTS_DIR;
+  if (envDir && fileExists(path.join(envDir, "registry.json"))) return envDir;
 
-  // Build a strict string[] by filtering out undefined
-  const candidates: string[] = [
-    fromEnv,
-    path.resolve(process.cwd(), "transports"),
-  ].filter((p): p is string => isNonEmptyString(p));
+  // 2) current working directory (repo root friendly)
+  const cwdDir = path.resolve(process.cwd(), "transports");
+  if (fileExists(path.join(cwdDir, "registry.json"))) return cwdDir;
 
-  // Try walking up from CWD
-  let cur = process.cwd();
-  for (let i = 0; i < 10; i++) {
-    const maybe = path.join(cur, "transports");
-    if (pathExists(path.join(maybe, "registry.json"))) {
-      candidates.push(maybe);
-      break;
-    }
-    const next = path.dirname(cur);
-    if (next === cur) break;
-    cur = next;
+  // 3) try a few ancestor levels relative to compiled file
+  // __dirname ≈ packages/@nublox/sqlx-transport/dist
+  const candidates = [
+    path.resolve(__dirname, "..", "transports"),
+    path.resolve(__dirname, "..", "..", "transports"),
+    path.resolve(__dirname, "..", "..", "..", "transports"),
+    path.resolve(__dirname, "..", "..", "..", "..", "transports"),
+  ];
+  for (const d of candidates) {
+    if (fileExists(path.join(d, "registry.json"))) return d;
   }
 
-  for (const dir of candidates) {
-    if (pathExists(path.join(dir, "registry.json"))) {
-      return dir;
-    }
-  }
+  // 4) last-resort: repo root guess
+  const repoGuess = path.resolve(__dirname, "../../../../transports");
+  if (fileExists(path.join(repoGuess, "registry.json"))) return repoGuess;
 
-  // As a last attempt, try alongside this package (useful if bundled)
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const pkgRoot = path.resolve(here, "..", ".."); // packages/@nublox/sqlx-transport/..
-  const fallback = path.join(pkgRoot, "transports");
-  if (pathExists(path.join(fallback, "registry.json"))) {
-    return fallback;
-  }
-
-  // Default to env or ./transports so error message is predictable
-  return isNonEmptyString(fromEnv) ? fromEnv : path.resolve(process.cwd(), "transports");
+  throw new Error(
+    `Could not locate transports/registry.json. ` +
+    `Set SQLX_TRANSPORTS_DIR, or create <repo-root>/transports with registry.json. ` +
+    `Looked in: ${[envDir, cwdDir, ...candidates, repoGuess].filter(Boolean).join(", ")}`
+  );
 }
 
-function loadJSON<T = unknown>(filePath: string): T {
-  const buf = fs.readFileSync(filePath, "utf8");
-  return JSON.parse(buf) as T;
+function loadJSON(p: string) {
+  const s = fs.readFileSync(p, "utf8");
+  return JSON.parse(s);
 }
 
-function loadRegistry(): Registry {
+function loadRegistry() {
   const dir = resolveTransportsDir();
-  const file = path.join(dir, "registry.json");
-  if (!pathExists(file)) {
-    throw new Error(`registry.json not found at ${file}`);
-  }
-  return loadJSON<Registry>(file);
+  return loadJSON(path.join(dir, "registry.json"));
 }
 
-function getFamilyFile(family: string): string {
+function getFamilyFile(family: string) {
   const dir = resolveTransportsDir();
-  const registry = loadRegistry();
-  const entry = registry.families?.[family];
-  if (!entry || !isNonEmptyString(entry.file)) {
-    throw new Error(`Family "${family}" not found in registry.json`);
+  const reg = loadRegistry();
+  const file = reg[family];
+  if (!file) throw new Error(`Family "${family}" not found in registry.json`);
+  const abs = path.join(dir, file);
+  if (!fileExists(abs)) {
+    throw new Error(`Family "${family}" maps to "${file}" but file not found at ${abs}`);
   }
-  const file = path.join(dir, entry.file);
-  if (!pathExists(file)) {
-    throw new Error(`Family config file not found: ${file}`);
-  }
-  return file;
+  return abs;
 }
 
-export function loadFamilyConfig(family: string): FamilyConfig {
-  const file = getFamilyFile(family);
-  return loadJSON<FamilyConfig>(file);
-}
-
-export function capabilityFromFamily(family: string): CapabilityProfile {
-  const cfg = loadFamilyConfig(family);
-  const profile: CapabilityProfile = {
-    version: `${cfg.name}-unknown`,
-    features: {},
-    limits: {
-      maxIdentifierLen: cfg.limits?.maxIdentifierLen ?? 63,
-      maxParams: cfg.limits?.maxParams ?? 32767,
-    },
-    sql: {
-      supports: cfg.sql?.supports ?? [],
-      reservedWords: cfg.sql?.reservedWords ?? [],
-    },
-    security: {
-      tls: cfg.security?.tls ?? "on",
-      trust: cfg.security?.trust ?? "system",
-    },
-  };
-
-  // Map capability flags (presence implies feature:true)
-  if (cfg.capabilityFlags) {
-    for (const key of Object.keys(cfg.capabilityFlags)) {
-      profile.features![key] = true;
-    }
-  }
-
-  // Hello-derived capabilities (if the pack listed them)
-  if (cfg.hello?.capabilities) {
-    for (const cap of cfg.hello.capabilities) {
-      if (cap.set) profile.features![cap.set] = true;
-    }
-  }
-
-  return profile;
-}
-
-/**
- * Optional helper: pick a family by URL scheme.
- */
-export function familyFromUrl(urlStr: string): string | undefined {
-  try {
-    const u = new URL(urlStr);
-    const registry = loadRegistry();
-    for (const [fam, info] of Object.entries(registry.families ?? {})) {
-      const schemes = (info.schemes ?? []).filter((s): s is string => isNonEmptyString(s));
-      if (schemes.includes(u.protocol.replace(/:$/, ""))) {
-        return fam;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return undefined;
-}
+// keep using getFamilyFile/loadRegistry where you already do

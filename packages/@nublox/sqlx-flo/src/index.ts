@@ -1,29 +1,30 @@
-// packages/@nublox/sqlx-flo/src/index.ts
 import {
-  familyFromUrl,
   capabilityFromFamily,
+  detectFamilyFromUrl,
   type CapabilityProfile,
 } from "@nublox/sqlx-transport";
 
-export type LearnResult = {
+export type LearnOutput = {
   family: string;
-  profile: CapabilityProfile;
+  capabilities: CapabilityProfile;
 };
 
-/**
- * Back-compat shim: expose the name the caller expected.
- */
-export function detectFamilyFromUrl(urlStr: string): string | undefined {
-  return familyFromUrl(urlStr);
+function requireUrl(url?: string): string {
+  const resolved = url ?? process.env.DATABASE_URL ?? "";
+  if (!resolved) {
+    throw new Error(
+      "No connection URL provided. Pass a URL or set DATABASE_URL."
+    );
+  }
+  return resolved;
 }
 
-/**
- * Minimal “learn” flow:
- * - detect the protocol family from the URL
- * - load the family capability profile from the transport registry
- */
-export async function learn(urlStr: string): Promise<LearnResult> {
-  const fam = familyFromUrl(urlStr) ?? "mysql"; // sensible default
-  const profile = capabilityFromFamily(fam);
-  return { family: fam, profile };
+export async function learn(url?: string): Promise<LearnOutput> {
+  const inputUrl = requireUrl(url);
+  const family = detectFamilyFromUrl(inputUrl);
+  if (!family) {
+    throw new Error(`Could not detect a DB family from URL: ${inputUrl}`);
+  }
+  const capabilities = capabilityFromFamily(family);
+  return { family, capabilities };
 }

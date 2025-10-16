@@ -1,13 +1,6 @@
 {
-  "mysql": {
-    "name": "mysql",
-    "schemes": [
-      "mysql",
-      "mariadb"
-    ],
-    "config": "mysql.config.json",
-    "defaultPorts": [
-      3306
-    ]
-  }
+  "mysql": "./mysql.config.json",
+  "mariadb": "./mysql.config.json",
+  "postgres": "./pg.config.json",
+  "postgresql": "./pg.config.json"
 }

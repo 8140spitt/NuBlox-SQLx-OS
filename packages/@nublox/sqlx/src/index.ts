@@ -1,33 +1,28 @@
 // packages/@nublox/sqlx/src/index.ts
+import { learn as floLearn, type LearnOutput } from "@nublox/sqlx-flo";
 import {
   capabilityFromFamily,
+  detectFamilyFromUrl,
   type CapabilityProfile,
 } from "@nublox/sqlx-transport";
-import {
-  learn as floLearn,
-  detectFamilyFromUrl,
-  type LearnResult,
-} from "@nublox/sqlx-flo";
 
-/**
- * Get a capability profile. If a URL is provided, we detect the family from it;
- * otherwise we default to "mysql".
- */
-export function capabilities(urlStr?: string): CapabilityProfile {
-  const family = urlStr ? detectFamilyFromUrl(urlStr) ?? "mysql" : "mysql";
-  return capabilityFromFamily(family);
+export type { LearnOutput, CapabilityProfile };
+
+export function capabilities(url?: string): CapabilityProfile {
+  if (url) {
+    const family = detectFamilyFromUrl(url);
+    if (!family) throw new Error(`Could not detect a DB family from URL: ${url}`);
+    return capabilityFromFamily(family);
+  }
+  // default family for now (adjust later)
+  return capabilityFromFamily("mysql");
 }
 
-/** Run the learning flow (family detection + capability profile). */
-export async function learn(urlStr: string): Promise<LearnResult> {
-  return floLearn(urlStr);
+// This is the symbol your CLI expects:
+export async function learn(url?: string): Promise<LearnOutput> {
+  return floLearn(url);
 }
 
-/** Simple health check used by the CLI. */
-export async function ping(): Promise<"pong"> {
+export function ping(): string {
   return "pong";
 }
-
-// Re-export types for downstream packages/CLI
-export type { CapabilityProfile } from "@nublox/sqlx-transport";
-export type { LearnResult } from "@nublox/sqlx-flo";
