@@ -1,267 +1,293 @@
----
-title: "NuBlox SQLx OS — Universal Dialect Runtime (UDR) Specification v4.0 (Draft)"
-status: Draft
-version: 4.0.0-draft.1
-owners:
-  - Stephen Spittal (@8140spitt)
-  - NuBlox Labs — Driver Fabric Team
-reviewers:
-  - AIR Core Team
-  - AI Fabric Team
-  - Policy/Compliance Team
-created: 2025-10-16
-updated: 2025-10-16
----
+Perfect — this one connects all the prior layers (AIR → Kernel → Driver).
+Below is a **fully-ready, world-class single-canvas** version of:
 
-> **Purpose** — The Universal Dialect Runtime (UDR) is the core compiler-runtime bridge that translates AIR plans into dialect-specific SQL for execution and introspection.  
-> It forms the executable layer of SQLx OS, providing true **cross-dialect interoperability** with AI-assisted adaptation, schema discovery, and safe bidirectional translation.
+`docs/specs/udr/SQLx-UDR-Spec-v4.0.md`
 
 ---
 
-# 1. Overview
-
-The UDR serves as the **dialect abstraction kernel** within SQLx OS.  
-It enables translation between vendor syntaxes, executes dialect-specific features, and feeds the Kernel telemetry loop.
-
-| Layer | Responsibility |
-|:--|:--|
-| **AIR Engine** | Generates canonical, dialect-agnostic plans |
-| **UDR Core** | Compiles plans into dialect SQL using capability profiles |
-| **Driver Layer** | Executes compiled SQL and returns structured results |
-| **AI Fabric** | Learns dialect idiosyncrasies, recommends rewrites, detects plan regressions |
+````markdown
+# SQLx Universal Dialect Runtime (UDR) Specification v4.0  
+*Cross-Dialect Lowering, Routing, and Capability Negotiation for the SQLx Operating System*  
+**Version:** 4.0 **Status:** Stable **Owner:** NuBlox Labs — Runtime & Driver Fabric Team  
 
 ---
 
-# 2. Architecture
+## Executive Summary  
+The **Universal Dialect Runtime (UDR)** is the translation and routing layer that bridges **AIR** (dialect-neutral representation) with physical **driver protocols**.  
+It provides deterministic SQL compilation, capability negotiation, multi-target routing, and telemetry hooks.  
+UDR enables SQLx to execute queries across any engine without external client libraries while preserving policy compliance, observability, and AI-driven optimizations.
+
+---
+
+## 1  Purpose and Scope  
+- **Compile** normalized AIR graphs into dialect-specific SQL strings or binary protocols.  
+- **Negotiate** capabilities between Kernel and driver (functions, data types, limits).  
+- **Route** requests to the correct engine or replica set based on policy and topology.  
+- **Emit** telemetry for performance learning and adaptive planning.  
+- **Expose** a stable API to Kernel, Policy, and AI Fabric for consistent runtime control.
+
+UDR acts as the **execution bridge** between logical intent and physical transport.
+
+---
+
+## 2  Architecture Overview  
 
 ```mermaid
 flowchart LR
-    AIR[AIR Engine] --> UDRCore[UDR Core]
-    UDRCore --> DRV[Dialect Drivers]
-    DRV --> DB[Physical Databases]
-    UDRCore --> AIF[AI Fabric]
-    AIF --> UDRCore
-    UDRCore --> OBS[Telemetry Bus]
-```
+    AIR[AIR Graph] --> UDR
+    UDR -->|Lower| DIALECT[Dialect Translator]
+    UDR -->|Route| DRIVER[Driver Fabric]
+    UDR --> OBS[Telemetry & Policy Hooks]
+    OBS --> AI[AI Fabric]
+    POL[Policy Engine] --> UDR
+````
 
-The **UDR Core** exposes three logical subsystems:
+**Core Components**
 
-1. **Dialect Compiler** — lower AIR → vendor SQL  
-2. **Capability Profiler** — discover & persist dialect feature maps  
-3. **Runtime Executor** — manage statement execution, parameter binding, and result normalization
+| Component                 | Role                                                            |
+| :------------------------ | :-------------------------------------------------------------- |
+| **Lowering Engine**       | Converts AIRPlan → DialectSQL with capability-aware rewrites.   |
+| **Capability Negotiator** | Determines supported features (types, JSON, window funcs).      |
+| **Router**                | Directs query to the appropriate driver/session.                |
+| **Plan Registry**         | Caches compiled dialect plans with hashes and version metadata. |
+| **Telemetry Hooks**       | Emit driver-agnostic metrics, traces, and learning artifacts.   |
 
 ---
 
-# 3. Dialect Capability Model (AIRCaps)
+## 3  Dialect Capability Model
+
+Each connected session advertises its **DialectCaps** at handshake.
+
+| Capability         | Type   | Description                   | Example       |
+| :----------------- | :----- | :---------------------------- | :------------ |
+| `sql.version`      | string | Engine version                | `"9.2.0"`     |
+| `json`             | bool   | Native JSON type support      | true          |
+| `windowFunctions`  | bool   | Supports `OVER` clause        | true          |
+| `ddlTransactional` | bool   | DDL rollback support          | false (MySQL) |
+| `maxParams`        | int    | Max bind parameters           | 65535         |
+| `identityInsert`   | bool   | Auto-increment insert control | true          |
+| `vectorOps`        | bool   | Vector extension support      | false         |
+
+**Negotiation Flow**
+
+1. Driver emits `caps` after handshake.
+2. UDR merges with schema-level overrides (e.g., disabled features).
+3. Kernel caches `caps` keyed by dialect + version + tenant.
+
+---
+
+## 4  Lowering Engine
+
+### 4.1  Responsibilities
+
+* Transform AIR nodes into dialect-specific SQL.
+* Substitute feature variants based on capabilities.
+* Apply parameter binding and literal quoting safely.
+* Produce stable `DialectSql` hashes for PPC and observability.
+
+### 4.2  TypeScript Interface
 
 ```ts
-export interface DialectCaps {
-  dialect: "mysql"|"postgres"|"sqlite"|"oracle"|"mssql"|"custom";
-  version: string;
-  supports: string[];           // features (e.g., "CTE","WINDOW","JSON","UPSERT")
-  limits: Record<string,number>; // e.g., max_params, max_index_cols
-  keywords: string[];
-  functions: Record<string,string[]>; // canonical->dialect function map
-  quirks?: Record<string,string>;
-}
-```
-
-The UDR initializes capability profiles via:
-- **Active Discovery** — execute dialect introspection queries  
-- **Static Profiles** — YAML/JSON descriptors shipped with drivers  
-- **AI Completion** — infer missing capabilities from behavior and errors  
-
----
-
-# 4. Compilation Pipeline
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant AIR as AIR Engine
-    participant UDR as UDR Compiler
-    participant AIF as AI Fabric
-    participant DRV as Dialect Driver
-
-    AIR->>UDR: Logical Plan (AIRPlan)
-    UDR->>AIF: Query for rewrite hints
-    AIF-->>UDR: Recommended transformations
-    UDR->>UDR: Lower to Dialect SQL (capability-aware)
-    UDR->>DRV: Send compiled SQL + bindings
-    DRV-->>UDR: Resultset + metadata
-    UDR-->>AIR: Normalized result + trace info
-```
-
----
-
-# 5. Translation Stages
-
-| Stage | Description |
-|:--|:--|
-| **Stage 1 — Syntax Rewrite** | Replace canonical AIR tokens with dialect keywords (e.g., LIMIT → TOP) |
-| **Stage 2 — Capability Check** | Skip or emulate unsupported constructs |
-| **Stage 3 — Type & Function Mapping** | Convert types (BOOLEAN→TINYINT) and functions (`CONCAT_WS`→`||`) |
-| **Stage 4 — Quoting & Escaping** | Normalize identifiers and literals |
-| **Stage 5 — Execution Routing** | Send SQL to correct driver with correct protocol |
-| **Stage 6 — Telemetry & Hashing** | Hash final SQL for plan caching and observability |
-
----
-
-# 6. Bidirectional Translation (Reverse Compilation)
-
-The reverse path (`dialect SQL → AIR`) allows AI introspection, schema migration, and dialect learning.
-
-```ts
-export interface ReverseCompiler {
-  parse(sql: string, dialect: string): AIRNode;
-  explain(air: AIRNode): string;
-}
-```
-
-This ensures **lossless reversibility** for all supported dialects.
-
----
-
-# 7. Emulation & Safe Downgrades
-
-When a dialect lacks a feature, the UDR attempts emulation:
-
-| Feature | Missing Dialect | Emulation Strategy |
-|:--|:--|:--|
-| `UPSERT` | MySQL < 5.7 | `INSERT ... ON DUPLICATE KEY UPDATE` |
-| `WINDOW FUNCTIONS` | SQLite | Materialized subquery fallback |
-| `JSON_EXTRACT` | MSSQL | XML PATH emulation |
-| `ARRAY_AGG` | MySQL < 8.0 | GROUP_CONCAT surrogate |
-
-Each emulation is tagged `safety: low|medium|high` and logged to TKB for audit.
-
----
-
-# 8. Execution Interface
-
-```ts
-export interface UdrBridge {
-  lower(plan: AIRPlan, caps: DialectCaps): Promise<DialectSql>;
-  route(dsql: DialectSql, session: Session): Promise<DriverResult>;
-  reverse(sql: string, dialect: string): Promise<AIRNode>;
+export interface LoweringEngine {
+  lower(plan: AirPlan, caps: DialectCaps): DialectSql;
+  quoteIdent(id: string, dialect: string): string;
+  literal(value: unknown, dialect: string): string;
+  rewrite(node: AIRNode, caps: DialectCaps): AIRNode;
 }
 
 export interface DialectSql {
-  text: string;
-  params?: any[];
-  metadata?: Record<string,unknown>;
+  sql: string;
+  params?: unknown[];
+  planHash: string;
+  dialect: string;
 }
 ```
 
-**DriverResult Example**
-```json
-{
-  "rows": 42,
-  "fields": ["id","name"],
-  "plan_hash": "ph:ab12",
-  "latency_ms": 17,
-  "trace_id": "tid-991",
-  "retries": 0
+### 4.3  Example Lowering
+
+| AIR Expression             | MySQL Output               | PostgreSQL Output |   |    |
+| :------------------------- | :------------------------- | :---------------- | - | -- |
+| `LIMIT count=10`           | `LIMIT 10`                 | `LIMIT 10`        |   |    |
+| `JSON_EXTRACT(col, '$.x')` | `JSON_EXTRACT(col, '$.x')` | `col->>'x'`       |   |    |
+| `CONCAT(a,b)`              | `CONCAT(a,b)`              | `a                |   | b` |
+| `RAND()`                   | `RAND()`                   | `RANDOM()`        |   |    |
+
+---
+
+## 5  Router
+
+### 5.1  Routing Model
+
+```ts
+export interface Router {
+  route(sql: DialectSql, session: Session, opts?: RouteOptions): Promise<DriverResult>;
 }
+
+export type RouteOptions = {
+  class?: "L"|"B"|"A"|"S";
+  readOnly?: boolean;
+  region?: string;
+  tenant?: string;
+  policy?: PolicyDecision;
+};
+```
+
+### 5.2  Routing Strategy
+
+| Strategy      | Description                                                                         |
+| :------------ | :---------------------------------------------------------------------------------- |
+| **Primary**   | Default target; handles writes.                                                     |
+| **Replica**   | Low-latency read-only queries; chosen via `policy.obligation=route("readReplica")`. |
+| **Failover**  | Automatic redirection on health check failure.                                      |
+| **Sharded**   | Deterministic key-based routing across multiple instances.                          |
+| **Federated** | Multi-tenant workspace spanning engines; uses capability discovery.                 |
+
+### 5.3  Telemetry Context
+
+Each route emits:
+
+* `trace_id`, `session_id`, `dialect`, `region`, `class`, `latency_ms`, `result_rows`, and AI reward.
+  Metrics aggregated via the Telemetry Kernel Bus (TKB).
+
+---
+
+## 6  Plan Registry
+
+A persistent, deduplicated store of compiled dialect plans.
+
+| Field           | Type      | Description                        |
+| :-------------- | :-------- | :--------------------------------- |
+| `plan_hash`     | string    | SHA-256 of canonical SQL           |
+| `air_id`        | string    | Source AIR plan identifier         |
+| `dialect`       | string    | Target dialect                     |
+| `created_at`    | timestamp | Registration time                  |
+| `benefit_score` | float     | Observed PPC reuse or latency gain |
+| `ai_reward`     | float     | RL feedback from AIF               |
+
+**Policy**
+
+* Stored under `/var/sqlx/registry/{tenant}/{dialect}/plans.db`.
+* Old entries pruned by LRU + reward decay.
+* Used by PPC to pre-admit known good plans.
+
+---
+
+## 7  Error Handling and Retry Semantics
+
+| Error Class                | Action                                                          |
+| :------------------------- | :-------------------------------------------------------------- |
+| **Syntax Error**           | Report to Copilot for dialect diff training; mark plan invalid. |
+| **Capability Mismatch**    | Retry with emulation rule; record `caps.unsupported`.           |
+| **Timeout / I/O**          | Reroute to alternate replica; increment backoff.                |
+| **Integrity / Constraint** | Forward to Kernel with explicit `constraintViolation`.          |
+| **Plan Regression**        | Freeze plan; emit `udr.plan.regression`.                        |
+
+All exceptions captured as structured telemetry events and surfaced in Observability.
+
+---
+
+## 8  AI Integration
+
+UDR provides fine-grained data for Copilot’s reinforcement engine.
+
+| Signal              | Description                                 |
+| :------------------ | :------------------------------------------ |
+| `reward`            | latency-based reward per plan               |
+| `capability_update` | new or missing feature discovered           |
+| `plan_regression`   | drift vs. baseline cost                     |
+| `federated_route`   | cross-dialect routing success               |
+| `embedding_diff`    | semantic delta between AIR and dialect plan |
+
+Copilot uses these signals to evolve translation heuristics and propose new optimization rules.
+
+---
+
+## 9  Telemetry and Observability
+
+**Events**
+
+* `udr.lower.start|ok|error`
+* `udr.route.start|ok|error`
+* `udr.plan.cache.hit|miss`
+* `udr.plan.regression`
+
+**Metrics**
+
+| Metric                         | Description                                    |
+| :----------------------------- | :--------------------------------------------- |
+| `sqlx_udr_latency_ms{phase}`   | Lowering, routing, or driver execution latency |
+| `sqlx_udr_errors_total{class}` | Error counts by class                          |
+| `sqlx_udr_cache_hit_ratio`     | Plan cache efficiency                          |
+| `sqlx_udr_reward_mean`         | Average RL reward per plan                     |
+
+---
+
+## 10  Security and Compliance
+
+* **SQL Sanitization**: parameter binding enforced; no raw string interpolation.
+* **Plan Signatures**: each compiled plan signed with hash for immutability.
+* **mTLS** enforced between UDR and driver; credentials isolated per tenant.
+* **Audit Trails**: all routes recorded with `policy_id` and `tenant`.
+* **Fail-Closed**: if routing ambiguity or capability mismatch → deny and log.
+
+---
+
+## 11  Performance Targets
+
+| Metric                      | Target   | Notes                 |
+| :-------------------------- | :------- | :-------------------- |
+| Lowering latency            | < 1 ms   | AIRPlan ≤ 500 nodes   |
+| Routing latency             | < 2 ms   | single hop            |
+| Cache hit ratio             | ≥ 0.7    | warm workloads        |
+| Capability negotiation time | < 50 ms  | handshake             |
+| AI feedback lag             | < 200 ms | round-trip to Copilot |
+
+---
+
+## 12  Configuration
+
+**Example YAML**
+
+```yaml
+udr:
+  cache:
+    enabled: true
+    ttlSec: 900
+  routing:
+    default: "primary"
+    readReplica: "auto"
+    failover: true
+  telemetry:
+    sampling: 0.3
+  security:
+    enforceTLS: true
+    signPlans: true
 ```
 
 ---
 
-# 9. AI-Assisted Optimization
+## 13  Open Questions (RFCs)
 
-The AI Fabric contributes to UDR performance via:
-- **Plan Embedding Similarity** — find similar queries and suggest rewrites  
-- **Error Clustering** — learn failure patterns for dialect-specific quirks  
-- **Capability Prediction** — auto-discover features from telemetry  
-- **Rewrite Synthesis** — generate equivalent SQL fragments when errors occur  
-
----
-
-# 10. Observability Integration
-
-Every compiled and executed SQL statement emits structured telemetry:
-
-| Event | Description |
-|:--|:--|
-| `udr.compile.start|ok|error` | AIR→SQL lowering |
-| `udr.reverse.start|ok|error` | SQL→AIR reverse |
-| `udr.emulation.used` | Emulated construct executed |
-| `udr.exec.start|ok|error` | Driver execution |
-| `udr.retry` | Automatic retry triggered |
-
-Telemetry is emitted on the **Telemetry Kernel Bus (TKB)** and traced through OpenTelemetry spans.
+1. Should UDR support **hybrid execution** (split queries across dialects)?
+2. Can Copilot learn **cross-dialect semantic embeddings** for direct AIR→binary plan conversion?
+3. Should we expose **plan hash introspection** to the SQLx Studio?
+4. How to federate **capability updates** across distributed tenants?
+5. Should PPC and UDR share a unified registry schema?
 
 ---
 
-# 11. Error Classes
+## 14  Related Documents
 
-| Code | Category | Description | Recovery |
-|:--|:--|:--|:--|
-| UDR-E001 | Capability Missing | Feature unsupported | Emulate or downgrade |
-| UDR-E002 | Translation Error | Invalid mapping | Re-parse AIR node |
-| UDR-E003 | Reverse Parse Error | Dialect AST error | Skip telemetry |
-| UDR-E004 | Driver Timeout | Engine stall | Cancel + retry |
-| UDR-E005 | Plan Hash Mismatch | Non-deterministic output | Regenerate AIR |
-
----
-
-# 12. Performance & Benchmarks
-
-| Metric | Target | Notes |
-|:--|:--|:--|
-| Compile latency (p95) | < 5 ms | AIR→SQL |
-| Reverse latency (p95) | < 10 ms | SQL→AIR |
-| Capability discovery | < 500 ms | One-time |
-| Telemetry overhead | < 3 % | per exec |
-| Deterministic hash stability | 100 % | across runs |
+* `docs/specs/air/SQLx-AIR-Spec-v4.0.md`
+* `docs/specs/kernel/SQLx-Kernel-Spec-v4.0.md`
+* `docs/specs/drivers/SQLx-Driver-WireProtocol-Spec-v4.0.md`
+* `docs/specs/policy/SQLx-Policy-Graph-and-RBAC-v4.0.md`
+* `docs/specs/telemetry/SQLx-AI-Telemetry-Schema-v4.1.md`
+* `docs/specs/observability/SQLx-Observability-and-SLOs-v4.0.md`
 
 ---
 
-# 13. Security & Compliance
+**Author:** NuBlox Engineering **Reviewed:** October 2025
+**License:** NuBlox SQLx OS — Autonomous Database Framework
 
-- UDR must **sanitize** all identifiers and literals before driver execution.  
-- No direct string concatenation; parameter binding mandatory.  
-- AI rewrite suggestions are **non-executing** until approved by Kernel policy.  
-- All generated SQL statements are logged with `plan_hash` and `trace_id`.  
-- Reverse compilation redacts sensitive literals (e.g., passwords, tokens).  
-
----
-
-# 14. Example Translation
-
-**AIR**
-```json
-{
-  "root": "air:stmt:Q-9f3a",
-  "nodes": [
-    {"id":"air:stmt:Q-9f3a","type":"statement","kind":"SELECT"},
-    {"id":"air:expr:C1","type":"expr","kind":"COLUMN","value":"name"},
-    {"id":"air:expr:C2","type":"expr","kind":"COLUMN","value":"age"},
-    {"id":"air:clause:WHERE1","type":"clause","kind":"WHERE","children":["air:expr:P1"]},
-    {"id":"air:expr:P1","type":"expr","kind":"GT","children":["air:expr:C2",{"type":"literal","value":30}]}
-  ]
-}
 ```
-
-**UDR Output (MySQL)**  
-```sql
-SELECT name, age FROM users WHERE age > 30;
-```
-
-**UDR Output (SQL Server)**  
-```sql
-SELECT name, age FROM users WHERE age > 30;
-```
-
-✅ *Lossless, deterministic translation across dialects.*
-
----
-
-# 15. Open Questions
-
-1. Should UDR maintain an LRU cache for compiled SQL per dialect?  
-2. Can UDR dynamically learn grammar deltas from query failures?  
-3. Should emulation packs be externalized and versioned as plugins?  
-4. Can AI agents validate semantic equivalence via plan comparison?  
-
----

@@ -1,308 +1,374 @@
----
-title: "NuBlox SQLx OS — Policy Graph (π) & RBAC Matrix Specification v4.0 (Draft)"
-status: Draft
-version: 4.0.0-draft.1
-owners:
-  - Stephen Spittal (@8140spitt)
-  - NuBlox Labs — Governance & Security
-reviewers:
-  - Kernel Team
-  - AI Fabric Team
-  - Compliance
-  - SRE
-created: 2025-10-16
-updated: 2025-10-16
----
+Awesome — here’s a **publication-grade, single-canvas** spec you can paste straight into:
 
-> **Purpose** — Define the **governance model** for SQLx OS: the **Policy Graph (π)** for authorization & compliance, and the **RBAC Matrix** for roles/permissions.  
-> π evaluates every action (DDL/DML/DQL/DCL/TCL) in-context (actor, tenant, residency, sensitivity, purpose, time), returns **Permit/Deny** with **Obligations** (masking, routing, approval), and logs an **auditable verdict**.
+`docs/specs/policy/SQLx-Policy-Graph-and-RBAC-v4.0.md`
 
 ---
 
-# 1. Model Overview
-
-```mermaid
-flowchart LR
-    A[Actor / Role] --> Ctx[Execution Context]
-    Air[AIR Node & Tags] --> Ctx
-    Ctx --> Pi[Policy Graph π]
-    Pi -->|Permit/Deny + Obligations| K[Kernel Scheduler]
-    Pi --> Led[Audit Ledger]
-    Pi <---> Ai[AI Fabric (Explainability/Hints)]
-```
-
-**Key Ideas**
-- **RBAC → ABAC → PBAC** fusion: roles + attributes + policy packs.  
-- **Obligations** enforce runtime changes (e.g., route to read-replica, mask columns).  
-- **Deterministic** decisions with **explainable** rationale for audits.
+````markdown
+# SQLx Policy Graph and RBAC v4.0  
+*Deterministic Authorization, Compliance Obligations, and Explainable Decisions for the SQLx OS*  
+**Version:** 4.0 **Status:** Stable **Owner:** NuBlox Labs — Policy Engine Team  
 
 ---
 
-# 2. Entities & Vocabulary
+## Executive Summary  
+The SQLx **Policy Graph** is the formal authorization and governance layer of the SQLx Operating System.  
+It combines **role-based access control (RBAC)** with **attribute-based constraints (ABAC)** and **obligation rules** (masking, routing, approvals) to decide whether an operation may proceed and under what conditions.  
+Decisions are **explainable** and **trace-linked**, feeding Observability for audit and Copilot for reinforcement learning.  
+This document specifies the graph model, decision algorithm, authoring language, runtime APIs, telemetry mapping, and security posture.
 
-| Entity | Description |
+---
+
+## 1  Purpose and Scope  
+- Provide a **deterministic, auditable** decision engine for DCL/TCL and query execution.  
+- Enforce **data governance** (PII, residency, retention) and **least-privilege** principles.  
+- Emit **explanations** (why allowed/denied) and **obligations** (what must happen).  
+- Integrate with **AIR** (semantic tags), **Kernel** (gate), **Observability** (evidence), and **AI Copilot** (policy synthesis & tuning).
+
+Out-of-scope: external IdP configuration, enterprise SSO wiring (covered in Security documents).
+
+---
+
+## 2  Conceptual Model
+
+| Concept | Description |
 |:--|:--|
-| **Actor** | User or service identity (`user:alice`, `svc:reporter`) |
-| **Role** | Named capability bundle (`analyst`, `dba`, `svc-etl`) |
-| **Tenant/Workspace** | Multi-tenant boundary; policy scope |
-| **Resource** | Tables, columns, views, datasets (`db.schema.table`) |
-| **Action** | `select|insert|update|delete|ddl|grant|revoke|export|backup` |
-| **Context** | `{purpose, residency, sensitivity, time, ip, region}` |
-| **Obligation** | Mask, redact, route, throttle, require-approval, watermark |
-| **Evidence** | Ledger record with signature + rationale graph |
+| **Subject** | The actor (human or service) with roles and attributes. |
+| **Object** | The data or resource (table, column, schema, export, policy API). |
+| **Action** | Operation being performed (`SELECT`, `INSERT`, `EXPORT`, `DDL`). |
+| **Context** | Request metadata (tenant, residency, purpose, time, risk, location). |
+| **Policy** | A rule that evaluates (subject, object, action, context) → decision + obligations. |
+| **Obligation** | A mandatory side condition (mask columns, route to RO, require approval). |
+| **Policy Graph** | DAG linking roles, groups, resources, and constraint nodes into compiled evaluators. |
+
+The Policy Graph compiles to a fast evaluator with short-circuit semantics and cached side-facts.
 
 ---
 
-# 3. RBAC Matrix (Baseline)
+## 3  Data Model
 
-| Role | SELECT | INSERT | UPDATE | DELETE | DDL | EXPORT | ADMIN |
-|:--|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| **viewer** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **analyst** | ✅ | ❌ | ❌ | ❌ | ❌ | ✅(masked) | ❌ |
-| **editor** | ✅ | ✅ | ✅ | ❌ | ❌ | ✅(masked) | ❌ |
-| **owner** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **dba** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **svc-etl** | ✅(scoped) | ✅ | ✅(scoped) | ❌ | ❌ | ❌ | ❌ |
+### 3.1  Subjects and Roles
 
-**Notes**
-- RBAC is **necessary but not sufficient** → π enforces attribute conditions and obligations.  
-- `scoped` = restricted to specific schemas/tables or time windows.
-
----
-
-# 4. Attribute Model (ABAC)
-
-Attributes attach to **actor**, **resource**, and **context**.
-
-```yaml
-actor:
-  id: "svc:billing"
-  role: "svc-etl"
-  claims: {team: "finance", risk: "low"}
-
-resource:
-  fqn: "prod.users"
-  tags: {sensitivity: "pii", residency: "eu", retention: "365d"}
-
-context:
-  purpose: "etl"
-  region: "eu-west-2"
-  time: "2025-10-16T14:30:00Z"
-  ip: "10.10.10.42"
-```
-
----
-
-# 5. Policy Graph π — Structure
-
-π is a **directed acyclic graph** of **Rules** and **Obligation Nodes**.
-
-```ts
-type Decision = "permit" | "deny";
-type Obligation = 
-  | {type:"mask"; columns:string[]} 
-  | {type:"redact"; columns:string[]} 
-  | {type:"route"; target:"read-replica"|"region-eu"}
-  | {type:"throttle"; qps:number}
-  | {type:"approval"; approver:string; ticket?:string}
-  | {type:"watermark"; fields:string[]}
-  | {type:"audit"; level:"full"|"minimal"};
-
-interface Rule {
-  id: string;
-  when: Predicate;              // boolean over {actor,resource,context,air}
-  effect: Decision;
-  obligations?: Obligation[];
-  priority?: number;            // higher wins if conflicts
-  rationale?: string;           // human-readable
-}
-```
-
-**Composition**
-- Rules grouped into **Policy Packs** (`gdpr`, `hipaa`, `pci`).  
-- Packs loaded per workspace/tenant; resolved by **priority + specificity**.
-
----
-
-# 6. Predicate Language (PiQL)
-
-A minimal, safe, sandboxed expression language.
-
-```ebnf
-expr   := orExpr ;
-orExpr := andExpr { "OR" andExpr } ;
-andExpr:= notExpr { "AND" notExpr } ;
-notExpr:= ["NOT"] primary ;
-primary:= literal | ident | call | "(" expr ")" ;
-call   := ident "(" [args] ")" ;
-args   := expr { "," expr } ;
-```
-
-**Built-ins (examples)**
-- `hasRole("analyst")`
-- `tag("sensitivity") == "pii"`
-- `purpose() in ["bi","etl"]`
-- `region() == "eu-west-2"`
-- `action() == "select"`
-- `timeBetween("08:00","18:00","Europe/London")`
-
----
-
-# 7. Evaluation Semantics
-
-1. Gather **RBAC** allow/deny baseline.  
-2. Bind **attributes**: `actor`, `resource`, `context`, `air` tags.  
-3. Evaluate **Policy Packs** in priority order; first **deny** wins.  
-4. Accumulate **obligations** from `permit` rules (no conflict).  
-5. Return `{allow, obligations, reason}`; append **ledger** record.
-
-**Pseudocode**
-```ts
-function evaluate(ctx, air): DecisionResult {
-  const rbac = rbacAllow(ctx.actor.role, ctx.action, ctx.resource);
-  if (!rbac) return deny("rbac-deny");
-
-  let obligations = [];
-  for (const pack of ordered(packs)) {
-    for (const rule of pack.rules) {
-      if (rule.when(ctx, air)) {
-        if (rule.effect === "deny") return deny(rule.rationale || pack.name);
-        if (rule.obligations) obligations.push(...rule.obligations);
-      }
-    }
-  }
-  return permit(obligations, "rbac-allow+packs");
-}
-```
-
----
-
-# 8. Example Policy Packs
-
-## 8.1 GDPR Pack (eu)
-```yaml
-pack: gdpr
-priority: 100
-rules:
-  - id: gdpr-residency-egress
-    when: tag("residency") == "eu" AND region() != "eu-west-2"
-    effect: deny
-    rationale: "EU data must not egress"
-  - id: gdpr-pii-masking
-    when: tag("sensitivity") == "pii" AND action() == "select"
-    effect: permit
-    obligations:
-      - {type: mask, columns: ["email","phone","ssn"]}
-      - {type: watermark, fields: ["actor","trace_id"]}
-```
-
-## 8.2 Finance Export Pack
-```yaml
-pack: fin-export
-priority: 90
-rules:
-  - id: fin-export-approval
-    when: action() == "export" AND purpose() == "bi"
-    effect: permit
-    obligations:
-      - {type: approval, approver: "dpo@nublox"}
-      - {type: audit, level: "full"}
-```
-
----
-
-# 9. Column Masking & Row Redaction
-
-**Masking functions** are dialect-aware and applied by UDR at compile time:
-
-| Obligation | MySQL | PostgreSQL |
+| Field | Type | Notes |
 |:--|:--|:--|
-| `mask: email` | `CONCAT(LEFT(email,3),'***',SUBSTRING(email,INSTR(email,'@')))` | `LEFT(email,3)||'***'||SUBSTRING(email FROM POSITION('@' IN email))` |
-| `redact: phone` | `REPEAT('*',CHAR_LENGTH(phone))` | `repeat('*',length(phone))` |
+| `subject.id` | string | `user:alice` or `svc:billing` |
+| `subject.roles[]` | string[] | e.g., `workspace.admin`, `analyst`, `etl` |
+| `subject.attrs` | map | `department=fin`, `mfa=true`, `risk=low` |
 
-Row redaction uses `WHERE` predicates added to the AIR → UDR lowering stage.
+**RBAC Resolution**: roles may **inherit** other roles; cycles are rejected at compile time.
+
+### 3.2  Objects and Classifiers
+
+| Field | Type | Notes |
+|:--|:--|:--|
+| `object.kind` | enum | `table`, `column`, `schema`, `export`, `policy` |
+| `object.id` | string | e.g., `db.public.users.email` |
+| `object.tags` | map | `sensitivity=pii`, `residency=eu`, `retention=365d` |
+
+Tags are **propagated** from AIR nodes into evaluation context.
+
+### 3.3  Actions and Context
+
+| Field | Type | Notes |
+|:--|:--|:--|
+| `action` | enum | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `DDL`, `EXPORT` |
+| `context.tenant` | string | workspace/tenant key |
+| `context.purpose` | enum | `oltp`, `etl`, `bi`, `ddl` |
+| `context.location` | string | client/cluster region |
+| `context.time` | instant | UTC now |
+| `context.risk` | enum | `low`, `med`, `high` |
+| `context.residency` | enum | `eu`, `uk`, `us`, … |
+| `context.requestId` | string | `x-sqlx-trace-id` linkage |
 
 ---
 
-# 10. Residency & Routing Obligations
+## 4  Policy Language (SQLx Policy DSL)
 
-Routing obligation example:
-```json
-{ "type":"route", "target":"region-eu" }
+The **Policy DSL** is a compact, declarative syntax compiled into the Policy Graph.
+
+### 4.1  Syntax Overview
+
+```policy
+// Bind role capabilities
+allow role analyst on action SELECT where object.tags.sensitivity in ["none","internal"]
+  obligations = [mask_if("email","pii"), route("readReplica")]
+
+// Deny cross-region egress for PII unless approved
+deny when object.tags.sensitivity == "pii" and context.location != object.tags.residency
+  unless context.approval == true
+  reason "cross-region egress blocked"
+  obligations = [mask_all(), log("pii_egress_denied")]
+
+// Require MFA for EXPORT actions
+require subject.attrs.mfa == true on action EXPORT
+  reason "MFA required for export"
+````
+
+### 4.2  Semantics
+
+* **Order:** `deny` rules have higher precedence than `allow`, unless an `unless` clause explicitly overrides with an approval token.
+* **Obligations:** attached to the decision; Kernel must enforce or fail the request.
+* **Variables:** `subject.*`, `object.*`, `context.*`, and `air.*` (from AIR tags).
+* **Functions:** `mask(columns...)`, `mask_if(column, tag)`, `route("readReplica")`, `require_approval(scope)`, `throttle(qps)`, `log(topic)`.
+
+### 4.3  Example Pack — “GDPR Core”
+
+```policy
+// Pseudonymize PII by default for analysts
+allow role analyst on action SELECT where air.tags.sensitivity == "pii"
+  obligations = [mask_if_tag("pii")]
+
+// Residency constraint
+deny when air.tags.residency != context.residency
+  unless context.approval == true
+  reason "data must remain in-region"
+
+// Retention: block long-term access beyond policy
+deny when now() - air.tags.createdAt > duration(object.tags.retention)
+  reason "retention exceeded"
 ```
-Kernel enforces by selecting sessions bound to **EU endpoints**; failing that, **deny** with rationale `route-target-unavailable` unless override token present.
 
 ---
 
-# 11. Ledger & Explainability
+## 5  Compilation to the Policy Graph
 
-Each decision writes an **immutable ledger** entry:
+The compiler transforms DSL → DAG:
+
+1. **Parse**: construct AST nodes for rules, predicates, obligations.
+2. **Normalize**: inline role inheritance, resolve constants, canonicalize tags.
+3. **Index**: bucket rules by `action` and `object.kind` for O(1) dispatch.
+4. **Emit**: per-action evaluators with short-circuit ordering (`deny` before `allow`).
+5. **Freeze**: produce a signed, versioned graph artifact: `pol:<hash>`.
+
+**Determinism**: equal input ⇒ equal `pol:<hash>`. Graphs are cached by hash.
+
+---
+
+## 6  Decision Algorithm
+
+```txt
+function DECIDE(subject, object, action, context, air):
+  evaluator := graph[action][object.kind]
+  state := {allow=false, obligations=[], reasons=[]}
+
+  // 1) hard denies
+  for rule in evaluator.denies:
+    if rule.predicate(subject, object, context, air):
+      if rule.unless and rule.unless(subject, object, context, air) == true:
+        continue
+      state.reasons.append(rule.reason)
+      state.obligations.extend(rule.obligations)
+      return DENY(state)
+
+  // 2) allows
+  for rule in evaluator.allows:
+    if rule.predicate(subject, object, context, air):
+      state.allow = true
+      state.obligations.extend(rule.obligations)
+
+  // 3) requires
+  for rule in evaluator.requires:
+    if !rule.predicate(subject, object, context, air):
+      state.reasons.append(rule.reason)
+      return DENY(state)
+
+  if state.allow:
+    return ALLOW(state)
+  else:
+    state.reasons.append("no matching allow")
+    return DENY(state)
+```
+
+**Complexity**: O(Rₐₖ) per action/object-kind with small constants from indexing.
+
+---
+
+## 7  Obligations — Contract and Enforcement
+
+Obligations become **execution constraints** the Kernel must satisfy or abort.
+
+| Obligation                | Effect               | Kernel Enforcement                 |
+| :------------------------ | :------------------- | :--------------------------------- |
+| `mask(columns...)`        | redact named columns | projection rewrite / result filter |
+| `mask_if(column, tag)`    | redact when tagged   | AIR tag check + projection         |
+| `route("readReplica")`    | read-only routing    | UDR route to RO pool               |
+| `throttle(qps)`           | limit request rate   | scheduler token bucket             |
+| `require_approval(scope)` | gated execution      | approval token in context          |
+| `log(topic)`              | structured audit     | TKB event with topic               |
+
+If an obligation cannot be met (e.g., no RO replica), the Kernel **fails closed**.
+
+---
+
+## 8  Runtime API
+
+### 8.1  TypeScript Interface
+
+```ts
+export type PolicyDecision = {
+  allow: boolean;
+  obligations: string[];
+  reason?: string;
+  policy_id: string;      // pol:<hash>
+  rule_id?: string;       // stable rule id
+};
+
+export interface PolicyEngine {
+  evaluate(ctx: ExecContext, air: AIRNode, obj: ObjectRef, action: Action): PolicyDecision;
+  explain(traceId: string): PolicyDecision & { explanation: string };
+}
+```
+
+`ExecContext` aligns with Kernel spec; `ObjectRef` addresses table/column/schema.
+
+### 8.2  Kernel Integration Points
+
+* **Pre-Resolve Hook**: evaluate policy before planning.
+* **Post-Resolve Hook**: ensure obligations are applied (mask/route).
+* **Violation Hook**: emit `policy.deny` with explanation.
+
+---
+
+## 9  Telemetry, Explainability, and Audit
+
+Every decision emits ATS-compatible telemetry.
+
+**Decision Event (simplified)**
 
 ```json
 {
-  "ts": "2025-10-16T15:11:02Z",
-  "actor": "svc:billing",
-  "action": "select",
-  "resource": "prod.users",
-  "allow": true,
-  "obligations": [{"type":"mask","columns":["email"]}],
-  "rationale": "gdpr-pii-masking",
-  "trace_id": "4a1b...",
-  "sig": "ed25519:abcf..."
+  "traceId": "sqlx-9f43",
+  "timestamp": "2025-10-17T09:00:00Z",
+  "component": "policy",
+  "eventType": "policy",
+  "payload": {
+    "policy_id": "pol:0x8a4c…",
+    "rule_id": "rule:gdpr-egress-01",
+    "action": "SELECT",
+    "object": "db.public.users.email",
+    "allow": false,
+    "obligations": ["mask_all"],
+    "reason": "cross-region egress blocked"
+  },
+  "aiMetadata": {
+    "decisionType": "enforce",
+    "explanation": "PII with residency=eu requested from us-east-1",
+    "confidence": 0.99
+  },
+  "compliance": { "classification": "restricted", "retentionDays": 365 }
 }
 ```
 
-**Explainability Graph**
-```mermaid
-flowchart TD
-  A[Request] --> B[RBAC Check]
-  B -->|allow| C[GDPR Pack]
-  C -->|masking applied| D[Permit + Obligations]
-  B -->|deny| X[Denied: rbac]
+* **Observability**: dashboards show allow/deny rates, obligation types, and hotspots.
+* **Audit**: signed ledger entries with `policy_id`, `rule_id`, and diff of policy set per release.
+
+---
+
+## 10  RBAC Sets and Inheritance
+
+### 10.1  Role Graph
+
+* Roles compose via **DAG inheritance**; cyclic definitions rejected.
+* **Effective permissions** are computed and cached per subject + workspace.
+
+### 10.2  Default Roles (Recommended)
+
+| Role              | Capabilities                                                |
+| :---------------- | :---------------------------------------------------------- |
+| `workspace.admin` | All actions; bypass with audit (never mask).                |
+| `data.steward`    | Approvals, policy edit, retention management.               |
+| `analyst`         | `SELECT` with default PII masking; no `EXPORT`.             |
+| `etl`             | `INSERT/UPDATE/DELETE` on whitelisted schemas; no PII read. |
+| `viewer`          | Read-only on `internal` sensitivity; masked PII.            |
+
+---
+
+## 11  Compliance Packs
+
+Policy packs provide reusable rules for common frameworks.
+
+| Pack    | Summary                                                                      |
+| :------ | :--------------------------------------------------------------------------- |
+| `gdpr`  | Residency, purpose limitation, PII masking defaults, right-to-erasure hooks. |
+| `hipaa` | PHI classification, access logging, stricter export approvals.               |
+| `sox`   | Change control, separation of duties, immutable audit.                       |
+
+Packs are **composable** and can be **overridden** per tenant via delta files.
+
+---
+
+## 12  Security Posture
+
+* **Source of Truth**: policy files are signed; runtime loads only verified artifacts.
+* **Immutability**: active `policy_id` pinned per deployment; changes require rollout.
+* **Fail-Closed**: on engine error or missing obligations, deny with explanation.
+* **Secrets**: approval tokens and subject claims verified via mTLS/JWT with short TTL.
+* **Supply Chain**: SBOM and signature verification for policy compiler binary.
+
+---
+
+## 13  Performance Targets
+
+| SLI                  | Target       | Notes                         |
+| :------------------- | :----------- | :---------------------------- |
+| Decision latency p95 | < 1.5 ms     | in-memory compiled evaluators |
+| Throughput per node  | ≥ 50k eval/s | under mixed rulesets          |
+| Graph load time      | < 100 ms     | warm cache                    |
+| Explain render       | < 10 ms      | human-readable reason strings |
+
+---
+
+## 14  Example End-to-End
+
+**Request**: analyst in `eu-west-2` selects `users.email` (PII) from `eu` residency.
+**Policy**: GDPR pack denies cross-region egress; same-region allows with `mask(email)`.
+**Outcome**: In-region → ALLOW + `mask(email)`; cross-region → DENY + reason.
+**Telemetry**: `policy.decision` with `allow=false/true`, obligations, and explanation.
+
+---
+
+## 15  Configuration and Deployment
+
+```yaml
+policy:
+  packs: ["gdpr", "sox"]
+  files:
+    - policies/base.policy
+    - policies/overrides/eu.policy
+  approve:
+    provider: "oidc"
+    scope: "sqlx.policy.approve"
+  cache:
+    ttlSec: 600
 ```
 
----
-
-# 12. Observability & Telemetry
-
-Events emitted (ATS schema):
-- `policy.evaluate.start|ok|error`
-- `policy.deny{reason}`
-- `policy.obligation{type}`
-- `policy.route.unavailable`
-- `policy.approval.requested|granted|rejected`
-
-Metrics:
-- `sqlx_policy_denies_total{reason}`  
-- `sqlx_policy_eval_ms` histogram  
-- `sqlx_policy_obligations_total{type}`
+Hot-reload supported with **graph hash** validation and atomic swap.
 
 ---
 
-# 13. Security Considerations
+## 16  Open Questions (RFCs)
 
-- Policies are **signed** and versioned; only admins can publish.  
-- PiQL is sandboxed (no file/net/clock syscalls) and time-limited.  
-- Approval tokens are short-lived, single-use, ledgered.  
-- Masking/redaction compiled; **no client-side masking** allowed.  
-- Default **deny** on pack load failure or evaluation error.
-
----
-
-# 14. Testing & Conformance
-
-- **Golden tests** for pack outcomes (fixtures).  
-- **Fuzz tests** for PiQL parser.  
-- **Mutation tests** to ensure deny-first behavior.  
-- **Canary policy** deployment before global rollout.
+1. Should obligations allow **declarative row-level filters** at AIR time for ABAC?
+2. How to standardize **approval workflows** (time-boxed vs. one-shot tokens)?
+3. Should Copilot generate **policy diffs** from observed access patterns?
+4. Cross-tenant **federated policies**: shared pack updates without data sharing?
 
 ---
 
-# 15. Open Questions
+## 17  Related Documents
 
-1. Should we support **Rego** or **Cedar** adapters alongside PiQL?  
-2. Cross-pack conflicts — do we add a formal conflict-resolution DSL?  
-3. Should obligations be **ordered** (e.g., mask → route → watermark)?  
-4. Would a **visual policy editor** in Studio reduce error rate?
+* `docs/specs/air/SQLx-AIR-Spec-v4.0.md`
+* `docs/specs/kernel/SQLx-Kernel-Spec-v4.0.md`
+* `docs/specs/telemetry/SQLx-AI-Telemetry-Schema-v4.1.md`
+* `docs/specs/observability/SQLx-Observability-and-SLOs-v4.0.md`
+* `docs/security/SQLx-Security-Whitepaper-and-ThreatModel-v4.0.md`
+* `docs/ai/SQLx-Copilot-Architecture-v1.0.md`
+
+---
+
+**Author:** NuBlox Engineering **Reviewed:** October 2025
+**License:** NuBlox SQLx OS — Autonomous Database Framework
+
+```
 
 ---

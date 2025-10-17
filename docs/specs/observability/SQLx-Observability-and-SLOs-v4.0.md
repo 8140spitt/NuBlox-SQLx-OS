@@ -1,253 +1,303 @@
----
-title: "NuBlox SQLx OS — Observability & SLOs Specification v4.0 (Draft)"
-status: Draft
-version: 4.0.0-draft.1
-owners:
-  - Stephen Spittal (@8140spitt)
-  - NuBlox Labs — SRE & Observability
-reviewers:
-  - Kernel Team
-  - AI Fabric Team
-  - Security & Compliance
-  - Driver Fabric Team
-created: 2025-10-16
-updated: 2025-10-16
----
+Excellent — this completes the “runtime intelligence core” (Kernel + Telemetry + UDR + Observability).
+Here’s your **full, single-canvas, copy-paste-ready** version for:
 
-> **Purpose** — Define the **observability model** (traces, metrics, logs), **service level indicators (SLIs)**, **service level objectives (SLOs)**, alert policies, and dashboards for SQLx OS v4.0.  
-> This spec aligns with the **AI Telemetry Schema (ATS)** and mandates OpenTelemetry (OTel) semantics across all subsystems.
+`docs/specs/observability/SQLx-Observability-and-SLOs-v4.0.md`
 
 ---
 
-# 1. Architecture Overview
+````markdown
+# SQLx Observability and SLOs v4.0  
+*Unified Telemetry, Metrics, and Service-Level Objectives for the SQLx Operating System*  
+**Version:** 4.0 **Status:** Stable **Owner:** NuBlox Labs — Observability & Reliability Engineering  
+
+---
+
+## Executive Summary  
+Observability in SQLx OS is not an afterthought—it is the **nervous system** of the platform.  
+Every query, plan, migration, or policy event emits structured telemetry through the **Telemetry Kernel Bus (TKB)** and is analyzed for **Service-Level Objectives (SLOs)**, **anomaly detection**, and **AI feedback**.  
+This document defines the end-to-end model for metrics, traces, logs, alerting, and reliability targets that underpin the self-driving behaviour of SQLx OS.
+
+---
+
+## 1  Purpose  
+- Provide a vendor-neutral, OpenTelemetry-aligned framework for all SQLx modules.  
+- Define unified metric naming, trace semantics, and SLO objectives.  
+- Enable AI-driven adaptation through Telemetry → Reward → Copilot loops.  
+- Ensure compliance, audit, and resilience through deterministic evidence capture.  
+
+---
+
+## 2  Architectural Overview  
 
 ```mermaid
 flowchart LR
-    KRN[SQLx Kernel] --> OTL[OTel Collector]
-    DRV[Drivers] --> OTL
-    UDR[UDR] --> OTL
-    POL[Policy π] --> OTL
-    AIF[AI Fabric] --> OTL
-    OTL --> MET[Metrics Store]
-    OTL --> TRC[Trace Store]
-    OTL --> LOG[Log Store]
-    OTL --> ALA[Alerting/Rules]
-    AIF <--> MET
-```
+    subgraph Kernel
+      OBS[Telemetry Kernel Bus (TKB)]
+      MET[Metrics Exporter]
+      LOG[Structured Logs]
+      TRC[Distributed Traces]
+      AI[AI Reward Loop]
+    end
 
-**Stores**: Prometheus (metrics), Tempo/Jaeger (traces), Loki/OpenSearch (logs).  
-**Dashboards**: Grafana (kernel/driver/policy/AI).
+    OBS --> MET
+    OBS --> LOG
+    OBS --> TRC
+    TRC --> AI
+    MET --> AI
+    LOG --> AI
+````
 
----
+**Key Design Principles**
 
-# 2. Namespacing & Conventions
-
-- **Resource attributes**: `service.name=sqlx-kernel|sqlx-driver|sqlx-udr|sqlx-policy|sqlx-studio`  
-- **Span names**: `{subsys}.{op}` (e.g., `driver.query`, `udr.compile`, `policy.evaluate`)  
-- **Metrics**: `sqlx_{subsys}_{metric}` (snake_case)  
-- **Labels**: `{dialect, workspace, tenant, region, class (L/B/A/S), version}`
-
----
-
-# 3. SLIs & SLOs by Subsystem
-
-## 3.1 Kernel
-
-**SLIs**
-- `exec_latency_ms{class}` (histogram)  
-- `sched_preemptions_total{class}`  
-- `cache_hit_ratio{kind}` (gauge)  
-- `errors_total{class}` (counter)
-
-**SLOs**
-- p95 `exec_latency_ms{class=L}` < **15 ms** (steady state)  
-- p95 `exec_latency_ms{class=B}` < **200 ms**  
-- p95 `exec_latency_ms{class=A}` < **1500 ms**  
-- `cache_hit_ratio{ppc}` > **0.35**
-
-## 3.2 Driver
-
-**SLIs**
-- `driver_latency_ms{op}` (handshake/query/prepare)  
-- `driver_errors_total{class}` (auth/protocol/timeout)  
-- `driver_pool_active|idle|waiting`
-
-**SLOs**
-- p95 handshake < **120 ms** (WAN), < **20 ms** (LAN)  
-- error rate < **0.1%** per 5-min window
-
-## 3.3 UDR
-
-**SLIs**
-- `udr_compile_ms` (AIR→SQL)  
-- `udr_reverse_ms` (SQL→AIR)  
-- `udr_emulation_used_total`
-
-**SLOs**
-- p95 compile < **5 ms**; reverse < **10 ms**  
-- emulation success rate > **99.5%**
-
-## 3.4 Policy (π)
-
-**SLIs**
-- `policy_eval_ms`  
-- `policy_denies_total{reason}`  
-- `approval_pending{count}`
-
-**SLOs**
-- p95 evaluation < **3 ms** (cached) / < **10 ms** (cold)  
-- approval median < **2 min** (org-configurable)
-
-## 3.5 AI Fabric
-
-**SLIs**
-- `reward_events_total`  
-- `model_inference_ms{agent}`  
-- `explainability_generated_total`
-
-**SLOs**
-- p95 inference < **20 ms** (online path)  
-- reward backlog < **1000** events per workspace
+| Principle            | Description                                                                              |
+| :------------------- | :--------------------------------------------------------------------------------------- |
+| **Unified Envelope** | All observability data share the same correlation IDs (`trace_id`, `span_id`, `tenant`). |
+| **OTel-Compatible**  | Standard OTel resource/schema with SQLx extensions.                                      |
+| **AI-Aware**         | Metrics contain reward signals and context tags for Copilot training.                    |
+| **Secure-by-Design** | No PII in telemetry; all artifacts signed and privacy-tagged.                            |
 
 ---
 
-# 4. Metric Catalogue (Prometheus)
+## 3  Telemetry Data Model
 
-```text
-# Kernel
-sqlx_exec_latency_ms_bucket
-sqlx_sched_preemptions_total
-sqlx_cache_hit_ratio
+Each emission conforms to the **ATS (AI Telemetry Schema)** envelope.
 
-# Drivers
-sqlx_driver_latency_ms_bucket{op="query"}
-sqlx_driver_errors_total{class}
-sqlx_driver_pool_active
-sqlx_driver_pool_waiting
-
-# UDR
-sqlx_udr_compile_ms_bucket
-sqlx_udr_reverse_ms_bucket
-sqlx_udr_emulation_used_total
-
-# Policy
-sqlx_policy_eval_ms_bucket
-sqlx_policy_denies_total{reason}
-
-# AI
-sqlx_ai_inference_ms_bucket{agent}
-sqlx_ai_reward_events_total
-```
-
----
-
-# 5. Logging (Loki/OpenSearch)
-
-- **Structure**: JSON lines with ATS envelope.  
-- **Levels**: `INFO` (normal), `WARN` (recoverable), `ERROR` (user-visible), `SECURITY` (policy/ledger).  
-- **PII Redaction**: enforced at source; test with redact e2e suite.
-
-**Example (driver timeout)**
 ```json
-{"ts":"2025-10-16T12:01:05Z","level":"ERROR","evt":"driver.query.error","dialect":"mysql","latency_ms":3001,"timeout":true,"trace_id":"4a1b..."}
+{
+  "ts": "2025-10-17T09:00:00.000Z",
+  "tenant": "acme",
+  "workspace": "prod-eu",
+  "trace_id": "4a1b...",
+  "span_id": "9f3a...",
+  "component": "kernel.scheduler",
+  "event": "sqlx_driver_query_ok",
+  "latency_ms": 12,
+  "rows": 42,
+  "reward": +1.2,
+  "slo_class": "L",
+  "policy_id": "pol:9f3a",
+  "ai_meta": { "model": "copilot-v1", "epoch": 120 }
+}
 ```
 
 ---
 
-# 6. Tracing (Tempo/Jaeger)
+## 4  Trace Taxonomy
 
-- **Parenting**: `kernel.exec` → `air.parse` → `udr.compile` → `driver.query`.  
-- **Baggage**: `tenant`, `workspace`, `region`, `dialect`, `air_id`, `plan_hash`.  
-- **Tail Sampling**: retain slow (>p95) or erroneous spans at 100%.
+| Domain        | Example Spans                                        | Description                              |
+| :------------ | :--------------------------------------------------- | :--------------------------------------- |
+| **Kernel**    | `kernel.exec.start`, `kernel.cancel`, `kernel.retry` | Query lifecycle and scheduling decisions |
+| **Driver**    | `driver.handshake`, `driver.query`, `driver.close`   | Transport-level telemetry                |
+| **AIR/UDR**   | `air.plan`, `udr.lower`, `udr.route`                 | Compilation and routing phases           |
+| **Policy**    | `policy.evaluate`, `policy.deny`                     | Authorization and obligations            |
+| **Migration** | `ddl.migration.start`, `ddl.rollback.ok`             | DDL orchestration events                 |
+| **AI**        | `ai.reward.emit`, `ai.model.update`                  | Feedback and reinforcement               |
+| **Security**  | `sec.auth`, `sec.tls`, `sec.violation`               | Security and compliance signals          |
+
+Traces are exported to the configured OTel Collector (Tempo/Jaeger) with full span context.
+
+---
+
+## 5  Metric Taxonomy
+
+### 5.1  Counters
+
+| Metric                         | Labels        | Description                          |
+| :----------------------------- | :------------ | :----------------------------------- |
+| `sqlx_driver_errors_total`     | dialect,class | Transport and protocol errors        |
+| `sqlx_policy_denies_total`     | reason        | Access control denials               |
+| `sqlx_cache_events_total`      | type          | Cache hits/misses/invalidations      |
+| `sqlx_sched_preemptions_total` | class         | Preemption counts per workload class |
+| `sqlx_migration_errors_total`  | type          | Failed DDL operations                |
+
+### 5.2  Histograms
+
+| Metric                       | Labels     | Unit | Description                      |
+| :--------------------------- | :--------- | :--- | :------------------------------- |
+| `sqlx_exec_latency_ms`       | class      | ms   | Query execution latency          |
+| `sqlx_driver_latency_ms`     | dialect,op | ms   | Driver handshake/query latency   |
+| `sqlx_air_compile_ms`        | phase      | ms   | AIR parse/plan/normalize latency |
+| `sqlx_policy_eval_ms`        | -          | ms   | Policy decision time             |
+| `sqlx_migration_duration_ms` | tenant     | ms   | Total migration duration         |
+
+### 5.3  Gauges
+
+| Metric               | Labels  | Description                      |
+| :------------------- | :------ | :------------------------------- |
+| `sqlx_pool_active`   | dialect | Active connections               |
+| `sqlx_pool_idle`     | dialect | Idle connections                 |
+| `sqlx_ppc_hit_ratio` | tenant  | Predictive Plan Cache efficiency |
+| `sqlx_model_version` | agent   | AI model rollout version         |
+
+---
+
+## 6  Log Schema
+
+Logs are structured JSON; never plain text.
+
+**Example: Policy Denial**
+
+```json
+{
+  "level": "warn",
+  "ts": "2025-10-17T09:00:02Z",
+  "component": "policy",
+  "trace_id": "a1d4...",
+  "event": "policy.deny",
+  "actor": "user:analyst-42",
+  "object": "db.public.users.email",
+  "reason": "cross-region egress blocked",
+  "obligations": ["mask:email"]
+}
+```
+
+**Retention:** 30 days default; extended for compliance events.
+
+---
+
+## 7  SLO Framework
+
+Each workload class (L/B/A/S) defines explicit SLO targets that Copilot monitors and optimizes.
+
+| Class | Description      | p95 Latency | Availability | Error Rate (max) |
+| :---- | :--------------- | :---------- | :----------- | :--------------- |
+| **L** | Low-latency OLTP | < 15 ms     | ≥ 99.99 %    | ≤ 0.1 %          |
+| **B** | Bulk ETL         | < 200 ms    | ≥ 99.9 %     | ≤ 0.5 %          |
+| **A** | Analytics        | < 1.5 s     | ≥ 99.9 %     | ≤ 0.5 %          |
+| **S** | System / DDL     | < 3 s       | ≥ 99.5 %     | ≤ 1 %            |
+
+**Calculation**
+
+```txt
+Availability = 1 - (failed_requests / total_requests)
+ErrorRate    = failed_spans / total_spans
+Latency(p95) = percentile(latency_ms, 95)
+```
+
+SLOs are stored in `/etc/sqlx/slo.yml` and versioned per release.
+
+---
+
+## 8  Alerting & Reliability
+
+### 8.1  Core Alerts
+
+| Alert                    | Condition                                 | Action                               |
+| :----------------------- | :---------------------------------------- | :----------------------------------- |
+| **Driver Failure Spike** | `sqlx_driver_errors_total > 50 in 5m`     | Trigger failover, page on-call       |
+| **Policy Denial Surge**  | `sqlx_policy_denies_total > baseline × 2` | Notify compliance                    |
+| **PPC Regression**       | `sqlx_ppc_hit_ratio < 0.2`                | Trigger plan retraining              |
+| **SLO Breach (L)**       | `p95_exec_latency_ms > 15`                | AI Copilot adjusts scheduler weights |
+| **Telemetry Drop**       | Exporter error rate > 0.5 %               | Restart collector pipeline           |
+
+### 8.2  Escalation Policy
+
+* Level 1: AI Copilot auto-mitigation (tune weights, reroute).
+* Level 2: On-call SRE human review.
+* Level 3: Executive compliance report if persistent > 1 h.
+
+---
+
+## 9  AI Copilot Feedback Loop
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    participant KRN as Kernel
-    participant AIR as AIR
-    participant UDR as UDR
-    participant DRV as Driver
-    KRN->>AIR: parse/normalize
-    AIR-->>KRN: ok
-    KRN->>UDR: compile
-    UDR-->>KRN: dsql
-    KRN->>DRV: execute
-    DRV-->>KRN: rows/ok
+flowchart LR
+    MET[Metrics] --> EVA[Evaluator]
+    EVA --> COP[AI Copilot]
+    COP --> ACT[Adaptive Tuning]
+    ACT --> KRN[Kernel Scheduler]
+    ACT --> PPC
 ```
 
----
+**Feedback Sources**
 
-# 7. Alert Policies (SRE)
+| Source                       | Feature              | Reward Signal                  |
+| :--------------------------- | :------------------- | :----------------------------- |
+| `sqlx_exec_latency_ms`       | Scheduler latency    | Negative proportional to ms    |
+| `sqlx_policy_denies_total`   | Compliance adherence | Neutral/positive if correct    |
+| `sqlx_driver_errors_total`   | Reliability          | Negative proportional to count |
+| `sqlx_migration_duration_ms` | Efficiency           | Positive if reduced            |
+| `sqlx_ppc_hit_ratio`         | Plan reuse           | Positive if improved           |
 
-| Alert | Condition | Severity | Action |
-|:--|:--|:--|:--|
-| **DriverTimeoutBurst** | `sqlx_driver_errors_total{class="timeout"} rate > 0.5/s` for 5m | P1 | page on-call, failover routing |
-| **KernelLatencyHigh** | p95 `sqlx_exec_latency_ms{class=L} > 50ms` for 10m | P2 | scale pools, inspect PPC |
-| **PolicyDeniesSpike** | `sqlx_policy_denies_total` 10x baseline | P2 | check recent policy changes |
-| **UDRCompileSlow** | p95 `sqlx_udr_compile_ms > 15ms` for 10m | P3 | inspect AIF hints |
-| **AIBacklogHigh** | reward backlog > 1000 for 15m | P3 | scale consumers |
-
-**Runbook links**: `/docs/ops/runbooks/RUNBOOK-kernel.md` etc.
+Copilot learns optimal scheduler weights and query plans from reward deltas.
 
 ---
 
-# 8. Dashboards (Grafana)
+## 10  Benchmark & Test Methodology
 
-- **Executive**: uptime, error rate, latency p95/p99, top tenants.  
-- **Kernel**: class latencies, scheduler preemptions, PPC hit, cache size.  
-- **Driver**: pool utilization, error classes, TLS handshakes, bytes.  
-- **Policy**: denies by reason, eval latency, approvals pending.  
-- **AI**: inference latency, model versions, reward rate.
-
----
-
-# 9. Sampling & Cost Control
-
-- **Tail-based sampling** for tracing (retain top 5% slowest).  
-- **Dynamic metrics downsampling** by workspace size.  
-- **Log sampling** caps noisy repeat errors.  
-- **Learning budget** caps rewards per tenant/day.
+* Synthetic workloads representing **L/B/A/S** profiles.
+* 10 min steady-state runs per class under nominal and degraded conditions.
+* Collect 100 % trace samples; compute SLO compliance ratios.
+* Publish results to `docs/observability/Benchmark-Results-v4.0.md`.
 
 ---
 
-# 10. Benchmarks & Golden Scenarios
+## 11  Security & Privacy
 
-Define reproducible scenarios for CI/CD and release gates:
-
-| Scenario | Workload | Target |
-|:--|:--|:--|
-| **OLTP-PointRead** | 95% reads, 5% writes, 200 RPS | p95 < 15 ms |
-| **Bulk-Insert** | 10k rows/min | p95 < 200 ms |
-| **Analytics-Scan** | 10M rows, 3 joins | p95 < 1500 ms |
-| **Migration-Online** | Add column online | zero failed queries |
-| **Policy-Spike** | 10x denies spike | no kernel degradation |
-
-Bench scripts live in `/bench/` with k6/Vegeta + SQL workloads.
+* **Data Minimization**: telemetry strips SQL literals; stores only plan hashes.
+* **PII Classification**: inherited from AIR tags → `sensitivity=pii|phi|none`.
+* **Encryption**: mTLS → Collector; encrypted object storage (AES-256) for logs.
+* **Access Control**: scopes `read:metrics`, `read:traces`, `read:logs`.
+* **Anonymization**: optional token vault for reversible pseudonyms in dev.
 
 ---
 
-# 11. CI Conformance
+## 12  Performance Targets
 
-- **Metrics presence**: scrape test validates all core metrics exist.  
-- **Trace shape**: golden traces compared against schema.  
-- **Alert dry-run**: rule evaluation in CI with synthetic data.  
-- **Dashboard JSON**: linting & UID pinning for portability.
-
----
-
-# 12. Security & Privacy
-
-- mTLS from producers to OTel collector.  
-- Token-scoped access to dashboards (per-tenant where applicable).  
-- No raw PII in spans/logs; test with synthetic payloads.  
-- Audit events shipped to immutable ledger in parallel.
+| Component                   | Metric     | Target   |
+| :-------------------------- | :--------- | :------- |
+| Telemetry emission overhead | CPU %      | < 3 %    |
+| Trace export latency        | ms         | < 100 ms |
+| Metric ingestion throughput | points/sec | ≥ 100 k  |
+| Log write latency           | ms         | < 50 ms  |
+| Reward propagation delay    | ms         | < 250 ms |
 
 ---
 
-# 13. Open Questions
+## 13  Configuration Example
 
-1. Adopt RED metrics (Rate, Errors, Duration) standard dashboards by default?  
-2. Expose per-tenant SLO overlays in Studio?  
-3. Enable “SLO error budget burn-rate” alerts out-of-the-box?
+```yaml
+observability:
+  otel:
+    endpoint: http://otel:4317
+    serviceName: sqlx-os
+    sampling: 0.2
+  slo:
+    refreshSec: 60
+    store: /etc/sqlx/slo.yml
+  alerts:
+    provider: pagerduty
+  retention:
+    traces: 30d
+    metrics: 400d
+    logs: 30d
+```
+
+Reloadable at runtime; validated by Kernel on startup.
 
 ---
+
+## 14  Open Questions (RFCs)
+
+1. Should Copilot enforce adaptive SLO budgets per tenant instead of global?
+2. Can reward feedback train **anomaly classifiers** for pre-emptive scaling?
+3. How to surface per-policy SLO dashboards in SQLx Studio?
+4. Should we embed PromQL → NL translation via Copilot for conversational ops?
+5. Should metrics move to a **columnar Parquet lake** for long-term analytics?
+
+---
+
+## 15  Related Documents
+
+* `docs/specs/telemetry/SQLx-AI-Telemetry-Schema-v4.1.md`
+* `docs/specs/kernel/SQLx-Kernel-Spec-v4.0.md`
+* `docs/specs/policy/SQLx-Policy-Graph-and-RBAC-v4.0.md`
+* `docs/specs/udr/SQLx-UDR-Spec-v4.0.md`
+* `docs/specs/migration/SQLx-Migration-and-DDL-Strategy-v4.0.md`
+
+---
+
+**Author:** NuBlox Engineering **Reviewed:** October 2025
+**License:** NuBlox SQLx OS — Autonomous Database Framework
+
+```

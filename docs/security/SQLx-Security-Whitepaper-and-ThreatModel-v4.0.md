@@ -1,237 +1,263 @@
----
-title: "NuBlox SQLx OS — Security Architecture & Threat Model v4.0 (Draft)"
-status: Draft
-version: 4.0.0-draft.1
-owners:
-  - Stephen Spittal (@8140spitt)
-  - NuBlox Labs — Security & Compliance
-reviewers:
-  - Kernel Team
-  - Policy (π) Team
-  - SRE & AI Fabric
-created: 2025-10-16
-updated: 2025-10-16
----
+Outstanding — this completes the foundational core with the **security posture and threat modelling whitepaper**, ensuring all Kernel, AI, and Telemetry systems are protected, auditable, and compliant.
 
-> **Purpose** — Define the **security model, threat landscape, mitigations, and assurance controls** for the SQLx Operating System.  
-> This document integrates privacy, compliance, and AI governance to deliver an enterprise-grade, verifiable secure data platform.
+Below is your **full, single-canvas, copy-paste-ready** document for:
+`docs/security/SQLx-Security-Whitepaper-and-ThreatModel-v4.0.md`
 
 ---
 
-# 1. Security Objectives
+````markdown
+# SQLx Security Whitepaper and Threat Model v4.0  
+*Comprehensive Security Architecture, Threat Surfaces, and Mitigation Strategy for the SQLx Operating System*  
+**Version:** 4.0 **Status:** Stable **Owner:** NuBlox Labs — Security & Compliance Division  
 
-| Objective | Description |
+---
+
+## Executive Summary  
+Security in SQLx OS is engineered as a **deterministic and auditable control plane**, not an afterthought.  
+This document defines the threat model, cryptographic baseline, RBAC/ABAC model, and end-to-end protections that ensure SQLx remains a **zero-trust, policy-driven, privacy-preserving** platform across all deployments — from single developer nodes to enterprise clusters.  
+
+---
+
+## 1  Core Security Principles  
+
+| Principle | Description |
 |:--|:--|
-| **Confidentiality** | Protect data in transit, at rest, and during AI processing |
-| **Integrity** | Ensure correctness and tamper-resistance of code, configuration, and data |
-| **Availability** | Maintain operational continuity under failure or attack |
-| **Auditability** | Produce immutable evidence for every critical event |
-| **Governance** | Enforce policy-driven control with explainable decisions |
-| **Privacy** | Minimize exposure and apply least-privilege + data minimization |
+| **Zero Trust by Default** | Every connection, process, and API call must authenticate and be policy-authorized. |
+| **Defense in Depth** | Multiple layers — network, kernel, policy, telemetry, AI. |
+| **Least Privilege** | Scopes and roles are minimal, explicit, and time-bound. |
+| **Immutable Audit** | Every sensitive event produces a signed, tamper-evident ledger entry. |
+| **Privacy by Design** | PII never leaves its residency zone unredacted or unapproved. |
+| **Deterministic Builds** | Reproducible binaries, SBOMs, and verified supply chain. |
+| **Explainable Enforcement** | Every denial or obligation must be trace-linked to policy evidence. |
 
 ---
 
-# 2. Security Architecture (High-Level)
+## 2  Security Architecture Overview  
 
 ```mermaid
-flowchart LR
-    CLI[Client / Studio] --> API[SQLx Control Plane]
-    API --> KRN[Kernel]
-    KRN --> UDR[Universal Dialect Runtime]
-    UDR --> DRV[Dialect Drivers]
-    DRV --> DB[(Database Engines)]
-    KRN --> PI[Policy π]
-    KRN --> ATS[Telemetry Bus (ATS)]
-    KRN --> AUD[Audit Ledger]
-    ATS --> OBS[Observability Stack]
-    PI --> PAP[Policy Admin]
-    AI[AI Fabric] --> KRN
-```
+flowchart TB
+    subgraph SQLx_OS
+      NET[Network Layer — TLS/mTLS]
+      AUTH[Authentication Services]
+      RBAC[Policy Graph (π)]
+      KRN[Kernel & Scheduler]
+      OBS[Telemetry & AI Fabric]
+      STOR[Encrypted Storage & Ledger]
+    end
 
-Security layers:
-- Network (TLS, mTLS)
-- Identity (OIDC/JWT/MFA)
-- Policy (π engine)
-- Data (encryption & masking)
-- AI (model governance)
-- Audit (signed ledger)
+    NET --> AUTH
+    AUTH --> RBAC
+    RBAC --> KRN
+    KRN --> OBS
+    KRN --> STOR
+````
 
----
+**Protection Domains**
 
-# 3. Threat Model (STRIDE Framework)
-
-| Category | Threat | Mitigation |
-|:--|:--|:--|
-| **Spoofing** | Impersonation of users/services | OIDC + short-lived JWT + mTLS mutual auth |
-| **Tampering** | Altered migration scripts, ledger entries | Signed artifacts, immutability checks, content hashes |
-| **Repudiation** | Users deny actions | Ledger append-only, PKI signatures, non-repudiation logs |
-| **Information Disclosure** | PII leakage via queries or telemetry | Masking obligations, redaction, encryption, DLP |
-| **Denial of Service** | Flooding, protocol abuse | Rate limiting, query guards, autoscaling |
-| **Elevation of Privilege** | Bypassing roles or approvals | RBAC/ABAC/π enforcement, least privilege, MFA on break-glass |
+1. **Network Plane** — TLS 1.3+ encryption, mTLS for internal services.
+2. **Kernel Plane** — sandboxed processes, memory scrubbing, and policy isolation.
+3. **Data Plane** — encrypted storage (AES-256-GCM) and signed migration ledgers.
+4. **AI Plane** — differential privacy budgets, signed model artefacts, redacted training data.
 
 ---
 
-# 4. Identity & Access Management (IAM)
+## 3  Authentication & Identity
 
-- **AuthN**: OIDC (Google, AzureAD, GitHub, SAML), service accounts via signed JWT.  
-- **AuthZ**: Policy Graph π + RBAC Matrix.  
-- **MFA enforcement** for break-glass, DDL, export.  
-- **Key rotation** every 90 days; automated via vault API.  
-- **Session isolation** per workspace; token scope includes tenant, region, version.
+| Component            | Mechanism                                | Description                                         |
+| :------------------- | :--------------------------------------- | :-------------------------------------------------- |
+| **Human Users**      | OIDC / OAuth2                            | Integrates with enterprise SSO; short-lived tokens. |
+| **Service Accounts** | JWT + Mutual TLS                         | Cryptographically bound to tenant + workspace.      |
+| **Drivers**          | Ephemeral key exchange                   | Derived during TLS handshake; no static secrets.    |
+| **AI Fabric Agents** | Scoped tokens (`aif.manage`, `aif.read`) | Restricted to telemetry ingestion/feedback.         |
 
-Example token claim:
+**Session Lifecycle**
+
+1. Token issued by Auth Service (5–15 min lifetime).
+2. mTLS handshake binds token → session key.
+3. Policy Graph evaluates scope + role.
+4. Renewal requires re-authentication; no silent refresh beyond 1 h.
+
+---
+
+## 4  Authorization Model (π: Policy Graph)
+
+SQLx unifies **RBAC**, **ABAC**, and **PBAC** (policy-based access control) under a graph model.
+
+| Layer    | Example                                  | Description                                    |
+| :------- | :--------------------------------------- | :--------------------------------------------- |
+| **RBAC** | `role:data.steward`                      | Hierarchical roles assigned to users/services. |
+| **ABAC** | `region=eu`, `sensitivity=pii`           | Attribute-driven conditions on context.        |
+| **PBAC** | `deny if crossRegion && sensitivity=pii` | Executable policy expressions.                 |
+
+Policies are versioned, digitally signed, and enforced at the **Kernel boundary** before driver execution.
+All decisions emit `policy.decision` telemetry to the ATS schema.
+
+---
+
+## 5  Data Protection
+
+### 5.1  Encryption Standards
+
+| Context         | Algorithm                               | Key Length | Notes                              |
+| :-------------- | :-------------------------------------- | :--------- | :--------------------------------- |
+| TLS Channels    | TLS 1.3 AES-256-GCM / ChaCha20-Poly1305 | 256 bit    | Forward secrecy via ECDHE.         |
+| Storage at Rest | AES-256-GCM                             | 256 bit    | Envelope encryption using KMS/HSM. |
+| API Tokens      | Ed25519 signatures                      | 256 bit    | Stateless verification.            |
+| Hashing         | SHA-256 / BLAKE3                        | —          | Deterministic IDs and artefacts.   |
+
+### 5.2  Secrets Management
+
+* All secrets stored in OS keychain or HSM (HashiCorp Vault / AWS KMS).
+* No plain-text credentials persisted beyond runtime memory.
+* Rotations enforced automatically (`rotateCredentials()` in Kernel API).
+
+---
+
+## 6  Threat Surface Inventory
+
+| Surface       | Threat               | Likelihood | Impact | Mitigation                                        |
+| :------------ | :------------------- | :--------- | :----- | :------------------------------------------------ |
+| Network       | MITM / TLS downgrade | Low        | High   | TLS 1.3 only, HSTS, cert pinning                  |
+| Auth          | Token replay / theft | Medium     | High   | mTLS binding, nonce expiry, JTI validation        |
+| Kernel        | Privilege escalation | Low        | High   | Capability sandbox, syscall filters               |
+| Policy Engine | Bypass attempt       | Low        | High   | Signed policies, integrity hash                   |
+| Driver        | SQL injection        | Medium     | Medium | Param-binding mandatory                           |
+| AI Fabric     | Model poisoning      | Low        | Medium | Signed datasets, DP-SGD, validation set           |
+| Observability | PII leakage          | Medium     | Medium | Redaction, token vault, privacy budgets           |
+| Supply Chain  | Package compromise   | Low        | High   | SBOM, signature verification, reproducible builds |
+
+---
+
+## 7  AI & Telemetry Security
+
+* **Differential Privacy (DP)** budgets enforce epsilon-delta limits on federated learning.
+* **Signed Model Artefacts:** each Copilot model includes hash + metadata → verified on load.
+* **Telemetry Integrity:** SHA-256 on ATS payloads; signatures verified in Collector.
+* **Reward Validation:** rejects out-of-range or inconsistent latency samples.
+* **Access Control:** telemetry ingestion allowed only from whitelisted Kernel nodes.
+
+---
+
+## 8  Compliance Framework Alignment
+
+| Regulation / Standard | SQLx Compliance Mechanisms                                        |
+| :-------------------- | :---------------------------------------------------------------- |
+| **GDPR / UK DPA**     | Residency tags, right-to-erase hooks, consent flags in ATS.       |
+| **SOC 2 Type II**     | Continuous telemetry + audit ledgers, separation of duties.       |
+| **HIPAA**             | PHI classification tags, encrypted channels, audit log retention. |
+| **SOX**               | Immutable migration ledger + policy approval workflows.           |
+| **ISO 27001**         | Comprehensive ISMS coverage; documented SLOs/Security controls.   |
+
+Evidence exports are generated via the Compliance Studio (JSON / CSV / PDF).
+
+---
+
+## 9  Logging, Audit, and Ledger
+
+### 9.1  Structured Audit Log
+
+Every privileged or data-modifying action emits a signed log event.
+
 ```json
 {
-  "sub": "user:8140spitt",
-  "tenant": "acme",
-  "workspace": "prod-eu",
-  "roles": ["analyst"],
-  "mfa": true,
-  "exp": 1760412345
+  "ts": "2025-10-17T09:30:00Z",
+  "actor": "user:admin-1",
+  "action": "kernel.migration.apply",
+  "resource": "schema:api.users",
+  "policy_id": "pol:9f3a",
+  "decision": "allow",
+  "signature": "ed25519:4a1b..."
 }
 ```
 
----
+### 9.2  Immutable Ledger
 
-# 5. Data Protection
+Append-only table: `sqlx_audit_ledger`
 
-| Layer | Control |
-|:--|:--|
-| **Transit** | TLS 1.3+ mandatory; HSTS for HTTP endpoints; OCSP stapling |
-| **At Rest** | AES-256-GCM or ChaCha20-Poly1305 via storage backend |
-| **Column Level** | Transparent data encryption + masking policy |
-| **Backups** | Encrypted object store + key separation |
-| **AI Artifacts** | Encrypted model weights & embeddings |
-| **Key Mgmt** | HSM integration; keys never leave module |
-
-**PII classification tags** flow from AIR → ATS → Policy → Audit.
+* Each record SHA-256 chained to previous hash.
+* Periodic notarisation into object storage or blockchain anchor (optional).
+* Retention: ≥ 7 years (configurable).
 
 ---
 
-# 6. Secure Development Lifecycle (SDL)
+## 10  Security Telemetry
 
-1. **Design Review** — threat modeling per module (kernel, driver, AI).  
-2. **Code Scanning** — SAST (Semgrep, CodeQL), dependency check (OSV).  
-3. **Runtime Scanning** — container image CVE scanning (Trivy).  
-4. **Secrets Detection** — pre-commit hooks + CI scanning.  
-5. **Pen Tests** — quarterly, external, covering drivers, kernel, studio.  
-6. **SBOM Generation** — every release via CycloneDX.  
-7. **Supply-Chain Signing** — sigstore (cosign) for all artifacts.
+Integrated with Observability layer (see SLO spec).
 
----
+| Metric                                   | Description                |
+| :--------------------------------------- | :------------------------- |
+| `sqlx_security_auth_failures_total`      | Authentication failures    |
+| `sqlx_security_tls_handshakes_total`     | Successful mTLS handshakes |
+| `sqlx_security_policy_denies_total`      | Enforcement count          |
+| `sqlx_security_model_signatures_invalid` | Rejected AI artefacts      |
 
-# 7. Network Security & Segmentation
-
-- **Zero-Trust topology**: every connection authenticated, encrypted.  
-- **Control Plane Isolation**: API and data planes separated.  
-- **Mesh Mode**: workspace-scoped service identities (SPIFFE/SPIRE).  
-- **Ingress**: WAF + rate limits.  
-- **Egress**: policy-controlled, logged via π obligations.  
+All metrics exported via OTLP with privacy-safe tags only.
 
 ---
 
-# 8. AI Governance & Model Safety
+## 11  Incident Response Workflow
 
-- **Explainability**: all AI actions (plan rewrites, recommendations) include rationale metadata.  
-- **Safety Filters**: prevent model from generating unsafe SQL.  
-- **Privacy**: training on federated, anonymized data with DP guarantees.  
-- **Versioning**: model weights tracked via ledger with signatures.  
-- **Rollback**: any AI agent can be disabled via feature flag.  
+1. **Detect** — alert via Observability thresholds or anomaly detection.
+2. **Contain** — isolate compromised workspace or tenant.
+3. **Eradicate** — revoke tokens, rotate keys, patch.
+4. **Recover** — validate integrity via audit ledger.
+5. **Post-Mortem** — generate signed IR report within 72 h.
 
-```json
-{
-  "agent": "optimizer-v2",
-  "version": "2.3.1",
-  "sha256": "ab12...",
-  "policy": {"sandbox": true, "human_review": true}
-}
+**Runbooks:** stored under `/docs/ops/runbooks/SQLx-Runbook-and-IncidentPlaybook-v4.0.md`.
+
+---
+
+## 12  Penetration & Fuzz Testing
+
+* Automated fuzzing of drivers, parsers, and packet decoders.
+* Quarterly third-party penetration testing (web/API/kernel planes).
+* Continuous mutation testing for policy enforcement code paths.
+* Test coverage ≥ 95 % for security-critical modules.
+
+---
+
+## 13  Supply Chain & Build Integrity
+
+* **SBOM** generated for every release (`/release/sbom.json`).
+* **Reproducible builds** verified by hash equivalence.
+* **Signature Verification**: all dependencies must be GPG-signed.
+* **CI/CD Hardening**: isolated runners, no shared credentials, ephemeral tokens.
+
+---
+
+## 14  Performance & Overhead Targets
+
+| Security Function       | Target Overhead |
+| :---------------------- | :-------------- |
+| TLS handshake latency   | < 20 ms         |
+| Auth token verification | < 2 ms          |
+| Policy evaluation       | < 1 ms          |
+| Audit log write         | < 5 ms          |
+| Encryption CPU overhead | < 5 %           |
+
+---
+
+## 15  Open Questions (RFCs)
+
+1. Should SQLx enforce **hardware-rooted attestation** for Kernel nodes (TPM/TEE)?
+2. Should the ledger anchor integrate with a **public blockchain notariser**?
+3. Can Copilot leverage anomaly scores for automated incident triage?
+4. Should telemetry encryption adopt **post-quantum primitives** (Kyber/Dilithium)?
+5. How to extend zero-trust boundaries into client SDKs?
+
+---
+
+## 16  Related Documents
+
+* `docs/specs/kernel/SQLx-Kernel-Spec-v4.0.md`
+* `docs/specs/ai/SQLx-Copilot-Architecture-v1.0.md`
+* `docs/specs/telemetry/SQLx-AI-Telemetry-Schema-v4.1.md`
+* `docs/specs/observability/SQLx-Observability-and-SLOs-v4.0.md`
+* `docs/ops/runbooks/SQLx-Runbook-and-IncidentPlaybook-v4.0.md`
+
+---
+
+**Author:** NuBlox Security Engineering **Reviewed:** October 2025
+**License:** NuBlox SQLx OS — Autonomous Database Framework
+
 ```
-
----
-
-# 9. Policy Enforcement (π Integration)
-
-- Policy evaluation precedes every query execution.  
-- Obligations include masking, routing, approval.  
-- Policy violations logged in ATS + ledger.  
-- Default stance: **deny-by-default** for undefined actions.
-
----
-
-# 10. Audit Ledger
-
-Immutable, append-only record of all sensitive operations.
-
-| Field | Description |
-|:--|:--|
-| `id` | UUIDv7 |
-| `ts` | ISO8601 timestamp |
-| `actor` | user/service |
-| `action` | SQLx operation |
-| `decision` | permit/deny |
-| `obligations` | mask, route, approval |
-| `signature` | PKI signature |
-| `prev_hash` | chain of custody |
-
-Ledger export → Parquet (analytics) + signed JSON (compliance).
-
----
-
-# 11. Incident Response
-
-**Detection Sources:** ATS alerts, anomaly detection, IDS, SOC feeds.  
-**Workflow:** triage → containment → mitigation → evidence → lessons learned.  
-**Automation:** auto-isolation of compromised tenants, token revocation, and trace replay for forensics.  
-**Retention:** 1 year min.  
-**Integration:** Slack/PagerDuty webhooks; evidence stored in immutable object store.
-
----
-
-# 12. Compliance Mapping
-
-| Framework | Coverage |
-|:--|:--|
-| **GDPR** | Residency, masking, DPO roles, audit export |
-| **ISO 27001** | A.12, A.18 (logging, compliance) |
-| **SOC 2 Type II** | CC6–CC9 (security, availability, confidentiality) |
-| **HIPAA** | PHI masking, audit logging, access controls |
-| **PCI DSS** | PAN encryption, masking obligations |
-| **NIST 800-53** | AC, AU, SC, SI controls mapped to modules |
-
----
-
-# 13. Security Telemetry (ATS)
-
-All security events emit to ATS `sec.*` category:
-
-| Event | Description |
-|:--|:--|
-| `sec.auth.success|failure` | login outcome |
-| `sec.tls.established` | handshake complete |
-| `sec.key.rotate` | key rotation completed |
-| `sec.policy.violation` | π deny event |
-| `sec.breakglass.used` | emergency override invoked |
-
----
-
-# 14. Residual Risks & Future Enhancements
-
-| Area | Risk | Mitigation |
-|:--|:--|:--|
-| **Third-party libraries** | Potential CVEs | SBOM + auto patch pipeline |
-| **LLM mis-suggestions** | Incorrect rewrites | Policy guardrail & sandbox |
-| **Operator error** | Policy misconfig | Dual approval, dry-run default |
-| **Zero-day exploit** | Unforeseen vuln | Bug bounty, 24h patch SLA |
-
-Future: confidential computing (TEE) for kernel execution; post-quantum crypto for key exchange.
-
----
-
-# 15. Open Questions
-
-1. Adopt FIPS 140-3 certified crypto modules?  
-2. Integrate with enterprise SIEM (Splunk, Sentinel)?  
-3. Add automatic privacy-budget enforcement in policy engine?  
-4. Support hardware attestation for Studio clients?  
-
----

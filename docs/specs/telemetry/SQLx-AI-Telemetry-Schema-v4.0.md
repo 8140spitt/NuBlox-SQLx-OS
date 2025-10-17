@@ -1,145 +1,145 @@
----
-title: "NuBlox SQLx OS — AI Telemetry Schema (ATS) v4.0 (Draft)"
-status: Draft
-version: 4.0.0-draft.1
-owners:
-  - Stephen Spittal (@8140spitt)
-  - NuBlox Labs — AI Fabric & Observability
-reviewers:
-  - Kernel Team
-  - Security & Compliance
-  - Driver Fabric Team
-created: 2025-10-16
-updated: 2025-10-16
----
+Perfect.
+Here is the **definitive, single-canvas, copy-paste-ready** document for your telemetry layer — the unified v4.1 edition that harmonises with Kernel, UDR, Observability and Copilot.
 
-> **Purpose** — The **AI Telemetry Schema (ATS)** standardizes **traces, metrics, logs, and learning artifacts** emitted by SQLx OS.  
-> ATS enables: (1) **online optimization** (reinforcement signals), (2) **explainability** (policy/plan rationale), (3) **observability** (SLOs, drift), and (4) **federated learning** with privacy controls.
+Save as:
+`docs/specs/telemetry/SQLx-AI-Telemetry-Schema-v4.1.md`
 
 ---
 
-# 1. Design Principles
-
-- **Vendor-neutral**: aligns to OpenTelemetry (OTel) where possible.  
-- **Minimal PII**: default redaction and classification; safe-by-default exports.  
-- **Deterministic IDs**: stable hashes for AIR graphs, plans, and compiled SQL.  
-- **Schema Evolution**: semver + backward compatibility; additive by default.  
-- **Stream-Ready**: transport-agnostic (gRPC/HTTP/Kafka/NATS).  
-- **Privacy-Aware Learning**: explicit consent flags and privacy budgets for federation.
+````markdown
+# SQLx AI Telemetry Schema (ATS) v4.1  
+*Unified Traces, Metrics, Logs, and Learning Artifacts for Autonomous SQLx OS*  
+**Version:** 4.1 **Status:** Stable **Owner:** NuBlox Labs — AI Fabric & Observability  
 
 ---
 
-# 2. Top-Level Data Model
+## Executive Summary  
+The **AI Telemetry Schema (ATS)** defines the canonical format for all observability and learning data in SQLx OS.  
+It provides a vendor-neutral, OpenTelemetry-aligned envelope for **traces**, **metrics**, **logs**, and **learning artifacts**, unifying system telemetry with reinforcement signals for the AI Fabric (Copilot).  
+ATS v4.1 extends v4.0 with new fields for **epoch tracking**, **policy linkage**, **SLO classification**, and **Copilot reasoning metadata**, ensuring every event is auditable, explainable, and AI-ready.
 
-ATS defines four primary artifact families:
+---
 
-| Family | Purpose | Transport |
-|:--|:--|:--|
-| **Trace Events** | Spans for kernel/driver/policy/UDR steps | OTel Traces |
-| **Metrics** | Counters, gauges, histograms | OTel Metrics |
-| **Logs** | Structured audit and diagnostics | OTel Logs |
-| **Learning Artifacts** | RL rewards, embeddings, cost models | JSON/Parquet (batch), Kafka (stream) |
+## 1  Design Principles  
 
-All artifacts share a common **envelope** with correlation identifiers.
+| Principle | Description |
+|:--|:--|
+| **Vendor-neutral** | Aligns to OpenTelemetry and Prometheus conventions. |
+| **Stable IDs** | Deterministic hashes for AIR graphs, plans, and spans. |
+| **Schema Evolution** | Additive; backward compatible across releases. |
+| **Privacy-first** | Default redaction, tokenisation, and classification. |
+| **AI-Aware** | Contains structured reward, model, and epoch metadata. |
+| **Stream-Ready** | Works over HTTP/gRPC/Kafka with JSON or Parquet payloads. |
+
+---
+
+## 2  Envelope Schema  
+
+All ATS families share a common top-level structure:
 
 ```json
 {
-  "ts": "2025-10-16T14:01:05.345Z",
+  "ts": "2025-10-17T09:00:00.234Z",
   "tenant": "acme",
   "workspace": "prod-eu",
   "trace_id": "4a1b...",
   "span_id": "9f3a...",
   "air_id": "air:Q-9f3a",
   "plan_hash": "ph:ab12",
+  "policy_id": "pol:ff3d",
   "dialect": "mysql",
-  "region": "eu-west-2"
+  "region": "eu-west-2",
+  "slo_class": "L",
+  "ai_meta": {
+    "model": "copilot-v1",
+    "epoch": 1234,
+    "reward": +1.4,
+    "confidence": 0.98
+  }
 }
-```
+````
+
+**Required fields:** `ts`, `trace_id`, `span_id`, `tenant`, `workspace`.
+All other fields optional but recommended for correlation.
 
 ---
 
-# 3. Event Taxonomy
+## 3  Artifact Families
 
-| Category | Event Names (suffix: .start|.ok|.error) |
-|:--|:--|
-| **Kernel Exec** | `kernel.exec`, `kernel.cancel`, `kernel.retry`, `kernel.timeout` |
-| **Scheduler** | `sched.classify`, `sched.preempt`, `sched.enqueue`, `_sched.dequeue_` |
-| **AIR** | `air.parse`, `air.normalize`, `air.plan`, `air.hash` |
-| **UDR** | `udr.compile`, `udr.reverse`, `udr.exec`, `udr.emulation.used` |
-| **Driver** | `driver.handshake`, `driver.query`, `driver.prepare`, `driver.close` |
-| **Policy (π)** | `policy.evaluate`, `policy.deny`, `policy.obligation` |
-| **Cache (PPC)** | `cache.hit`, `cache.miss`, `cache.invalidate` |
-| **DDL/Migration** | `ddl.migration.start|ok|rollback`, `ddl.lock`, `ddl.online` |
-| **Security** | `sec.auth`, `sec.tls`, `sec.key.rotate`, `sec.violation` |
-
-> Naming is dot-scoped; each emits a **trace span** and a structured **log record**.
+| Family                 | Purpose                                      | Transport       | Typical Volume |
+| :--------------------- | :------------------------------------------- | :-------------- | :------------- |
+| **Trace Events**       | Distributed spans for Kernel, Driver, Policy | OTLP/HTTP/gRPC  | High           |
+| **Metrics**            | Quantitative SLO indicators                  | OTLP/Prometheus | Continuous     |
+| **Logs**               | Structured audit and diagnostics             | Loki/Elastic    | Moderate       |
+| **Learning Artifacts** | Rewards, embeddings, cost models             | Kafka/Parquet   | Variable       |
 
 ---
 
-# 4. Trace Attributes (OTel Mapping)
+## 4  Trace Attributes
 
-| Attribute | Type | Example |
-|:--|:--|:--|
-| `sqlx.tenant` | string | `"acme"` |
-| `sqlx.workspace` | string | `"prod-eu"` |
-| `db.system` | string | `"mysql"`, `"postgresql"` |
-| `db.statement` | string (redacted) | `"SELECT name FROM users WHERE age > ?"` |
-| `db.operation` | string | `"SELECT"` |
-| `db.sqlx.air_id` | string | `"air:Q-9f3a"` |
-| `db.sqlx.plan_hash` | string | `"ph:ab12"` |
-| `net.peer.name` | string | `"db.prod.internal"` |
-| `net.peer.port` | int | `5432` |
-| `enduser.id` | string (pseudonymous) | `"actor:svc-billing"` |
+| Attribute        | Type              | Example                                  |
+| :--------------- | :---------------- | :--------------------------------------- |
+| `sqlx.tenant`    | string            | `"acme"`                                 |
+| `sqlx.workspace` | string            | `"prod-eu"`                              |
+| `db.system`      | string            | `"mysql"`, `"postgresql"`                |
+| `db.statement`   | string (redacted) | `"SELECT name FROM users WHERE age > ?"` |
+| `db.operation`   | string            | `"SELECT"`                               |
+| `sqlx.air_id`    | string            | `"air:Q-9f3a"`                           |
+| `sqlx.plan_hash` | string            | `"ph:ab12"`                              |
+| `sqlx.policy_id` | string            | `"pol:ff3d"`                             |
+| `net.peer.name`  | string            | `"db.prod.internal"`                     |
+| `net.peer.port`  | int               | `5432`                                   |
+| `enduser.id`     | string            | `"actor:svc-billing"`                    |
+| `slo.class`      | string            | `"L"`                                    |
+| `ai.reward`      | float             | `+1.4`                                   |
 
-**Redaction policy**: parameters and sensitive literals are omitted from `db.statement` unless `telemetry.debugRedact=false` in dev mode.
-
----
-
-# 5. Metric Set (SLO-Oriented)
-
-### Counters
-- `sqlx_driver_errors_total{dialect,class}`  
-- `sqlx_policy_denies_total{reason}`  
-- `sqlx_cache_events_total{type}` (hit/miss/invalidate)  
-- `sqlx_sched_preemptions_total{class}`
-
-### Histograms
-- `sqlx_exec_latency_ms{class}` (L/B/A/S)  
-- `sqlx_driver_latency_ms{dialect,op}` (handshake, query, prepare)  
-- `sqlx_policy_eval_ms`  
-- `sqlx_air_compile_ms` (parse/normalize/plan)
-
-### Gauges
-- `sqlx_pool_active{id}` / `sqlx_pool_idle{id}`  
-- `sqlx_cache_size{kind}`  
-- `sqlx_model_version{agent}`
+Sensitive literals are **redacted** unless `telemetry.debugRedact=false` in dev.
 
 ---
 
-# 6. Log Records (Structured)
+## 5  Metric Definitions
 
-Example: **policy denial**
+### 5.1 Counters
+
+| Metric                         | Labels        | Description               |
+| :----------------------------- | :------------ | :------------------------ |
+| `sqlx_driver_errors_total`     | dialect,class | Transport/protocol errors |
+| `sqlx_policy_denies_total`     | reason        | Policy denials            |
+| `sqlx_cache_events_total`      | type          | hit/miss/invalidate       |
+| `sqlx_sched_preemptions_total` | class         | Scheduler preemptions     |
+
+### 5.2 Histograms
+
+| Metric                   | Labels     | Unit | Description          |
+| :----------------------- | :--------- | :--- | :------------------- |
+| `sqlx_exec_latency_ms`   | class      | ms   | Query latency        |
+| `sqlx_driver_latency_ms` | dialect,op | ms   | Driver op latency    |
+| `sqlx_policy_eval_ms`    | -          | ms   | Policy decision time |
+| `sqlx_air_compile_ms`    | phase      | ms   | AIR parse/plan time  |
+
+### 5.3 Gauges
+
+| Metric               | Labels  | Description           |
+| :------------------- | :------ | :-------------------- |
+| `sqlx_pool_active`   | dialect | Active connections    |
+| `sqlx_pool_idle`     | dialect | Idle connections      |
+| `sqlx_cache_size`    | kind    | Cache footprint       |
+| `sqlx_model_version` | agent   | Copilot model version |
+
+---
+
+## 6  Log Schema
+
+Structured JSON logs support deterministic ingestion.
+
+**Example: plan regression**
 
 ```json
 {
-  "ts": "2025-10-16T14:03:22.111Z",
+  "ts": "2025-10-17T09:01:11Z",
   "trace_id": "4a1b...",
-  "span_id": "00ef...",
-  "evt": "policy.deny",
+  "event": "udr.plan.regression",
   "tenant": "acme",
-  "actor": "user:analyst-42",
-  "air_id": "air:Q-42",
-  "reason": "cross-region egress blocked by residency=eu",
-  "obligations": ["mask:email"]
-}
-```
-
-Example: **plan regression**
-
-```json
-{
-  "ts": "2025-10-16T14:05:12.001Z",
-  "evt": "udr.compile.ok",
   "air_id": "air:Q-9f3a",
   "plan_hash": "ph:ab12",
   "baseline_cost": 122.3,
@@ -149,16 +149,30 @@ Example: **plan regression**
 }
 ```
 
----
+**Example: policy decision**
 
-# 7. Learning Artifacts
-
-Learning artifacts power the AI Fabric and are stored in Parquet (batch) or emitted to Kafka (stream).
-
-## 7.1 Reward Record
 ```json
 {
-  "ts": "2025-10-16T14:06:17.441Z",
+  "ts": "2025-10-17T09:02:00Z",
+  "event": "policy.deny",
+  "actor": "user:analyst-42",
+  "object": "db.public.users.email",
+  "reason": "cross-region egress blocked",
+  "obligations": ["mask:email"]
+}
+```
+
+---
+
+## 7  Learning Artifacts
+
+Learning artifacts drive Copilot’s reinforcement and embedding models.
+
+### 7.1 Reward Record
+
+```json
+{
+  "ts": "2025-10-17T09:03:05Z",
   "air_id": "air:Q-9f3a",
   "plan_hash": "ph:ab12",
   "class": "L",
@@ -167,15 +181,16 @@ Learning artifacts power the AI Fabric and are stored in Parquet (batch) or emit
   "io_bytes": 4096,
   "rows": 42,
   "success": true,
-  "reward": -14.1, 
+  "reward": -14.1,
   "context": {"dialect":"mysql","region":"eu-west-2","engine":"8.0.36"}
 }
 ```
 
-## 7.2 Embedding Record
+### 7.2 Embedding Record
+
 ```json
 {
-  "ts": "2025-10-16T14:06:17.500Z",
+  "ts": "2025-10-17T09:03:06Z",
   "air_id": "air:Q-9f3a",
   "embedding_id": "emb:Q-9f3a:v1",
   "vector": [0.112, -0.045, ...],
@@ -184,10 +199,11 @@ Learning artifacts power the AI Fabric and are stored in Parquet (batch) or emit
 }
 ```
 
-## 7.3 Capability Discovery Record
+### 7.3 Capability Discovery
+
 ```json
 {
-  "ts": "2025-10-16T14:07:03.210Z",
+  "ts": "2025-10-17T09:03:07Z",
   "dialect": "postgres",
   "version": "15.3",
   "capability": "WINDOW",
@@ -198,19 +214,26 @@ Learning artifacts power the AI Fabric and are stored in Parquet (batch) or emit
 
 ---
 
-# 8. PII, Privacy & Federation
+## 8  Privacy & Federation
 
-## 8.1 Classification
-Columns and literals are tagged in AIR; ATS copies tags into telemetry with **no raw values**.  
-- `sensitivity = pii|phi|financial|none`  
-- `residency = eu|uk|us|...`  
-- `retention = 30d|90d|365d|...`
+### 8.1 Classification
 
-## 8.2 Redaction & Tokenization
-- `db.statement` parameters replaced with `?` or `$1`.  
-- **Token vault** optional for reversible dev-mode tokenization.
+| Field         | Values                    | Purpose        |
+| :------------ | :------------------------ | :------------- |
+| `sensitivity` | pii, phi, financial, none | PII tagging    |
+| `residency`   | eu, uk, us, ...           | Region tagging |
+| `retention`   | 30d, 90d, 365d            | Data lifecycle |
 
-## 8.3 Consent Flags (per artifact)
+Tags propagate from AIR nodes into telemetry automatically.
+
+### 8.2 Redaction
+
+* Parameters replaced with `?` or `$1`.
+* Token vault optional for reversible pseudonymisation in dev.
+* Differential privacy budgets per tenant.
+
+### 8.3 Consent Flags
+
 ```json
 {
   "federation": {
@@ -221,25 +244,27 @@ Columns and literals are tagged in AIR; ATS copies tags into telemetry with **no
 }
 ```
 
-## 8.4 Retention Policy (defaults)
-| Artifact | Default Retention |
-|:--|:--|
-| Traces/Logs | 30 days |
-| Metrics | 400 days (roll-up) |
-| Learning Artifacts | 90 days (local), 0 days (federation unless opted-in) |
+### 8.4 Retention Policy
+
+| Artifact           | Default Retention                               |
+| :----------------- | :---------------------------------------------- |
+| Traces/Logs        | 30 days                                         |
+| Metrics            | 400 days (rolled up)                            |
+| Learning Artifacts | 90 days local; 0 days federated unless opted-in |
 
 ---
 
-# 9. Transport & Storage
+## 9  Transport & Storage
 
-| Layer | Option |
-|:--|:--|
-| **Traces/Metrics/Logs** | OTel Collector → Prometheus/Tempo/Loki or OTLP gRPC |
-| **Learning Stream** | Kafka / Redpanda topics (`sqlx.learn.reward`, `sqlx.learn.embed`) |
-| **Batch Lake** | Parquet in object store (S3/GCS/Azure Blob) |
-| **Search** | OpenSearch/Elasticsearch for logs |
+| Layer                   | Implementation                                             |
+| :---------------------- | :--------------------------------------------------------- |
+| **Traces/Metrics/Logs** | OTLP Collector → Prometheus / Tempo / Loki                 |
+| **Learning Stream**     | Kafka / Redpanda (`sqlx.learn.reward`, `sqlx.learn.embed`) |
+| **Batch Lake**          | Parquet on S3/GCS/Azure Blob                               |
+| **Search**              | OpenSearch for indexed logs                                |
 
-**Topic Partitioning**
+Topic partitioning:
+
 ```
 sqlx.learn.reward.{workspace}.{yyyyMMdd}
 sqlx.learn.embed.{workspace}.{yyyyMMdd}
@@ -247,49 +272,53 @@ sqlx.learn.embed.{workspace}.{yyyyMMdd}
 
 ---
 
-# 10. Schema Registry & Versioning
+## 10  Schema Registry & Versioning
 
-- **SemVer** header: `ats.version = 4.0.0`  
-- **Backward-compatible changes**: add fields; do not change types.  
-- **Breaking changes**: bump MAJOR; dual-write during migration window.  
-- **Registry**: JSON schema in `/docs/specs/telemetry/schema/ats-4.0.0.json`
-
----
-
-# 11. Sampling & Budgeting
-
-- **Tail-based sampling** for slow or erroneous spans.  
-- **Dynamic sampling** increases for new deployments or anomalies.  
-- **Learning budget** — cap daily reward volume per tenant to control cost.  
-- **PII budget** — block federation when privacy budget exhausted.
+* Header: `ats.version = 4.1.0`
+* Backward-compatible additions only.
+* Breaking change → bump major + dual-write period.
+* Registry stored in `docs/specs/telemetry/schema/ats-4.1.0.json`.
 
 ---
 
-# 12. Validation & Conformance
+## 11  Sampling & Budgeting
 
-- JSON Schema validation on ingestion.  
-- Conformance tests in CI for all event producers.  
-- Golden traces for benchmark scenarios (OLTP, ETL, BI).
-
----
-
-# 13. Security Considerations
-
-- mTLS between producers and collectors.  
-- Signed artifacts (learning batches) with content hash + signature.  
-- Access control via workspace scopes (`read:metrics`, `read:logs`, `read:learn`).  
-- Secret redaction in logs (denylist patterns + context-aware filters).
+| Type                    | Description                                |
+| :---------------------- | :----------------------------------------- |
+| **Tail-based sampling** | Retain only slow/error traces.             |
+| **Dynamic sampling**    | Higher rate for new releases or anomalies. |
+| **Learning budget**     | Cap reward events per tenant/day.          |
+| **PII budget**          | Block federation when exhausted.           |
 
 ---
 
-# 14. Example End-to-End Flow (Mermaid)
+## 12  Validation & Conformance
+
+* JSON Schema validation on ingestion.
+* Unit tests for producers in CI.
+* Golden traces maintained for benchmark workloads.
+* Schema registry enforces type stability and required fields.
+
+---
+
+## 13  Security Considerations
+
+* **Transport**: mTLS between producers/collectors.
+* **Integrity**: signed learning artifacts with SHA-256 hash.
+* **Access**: scoped tokens (`read:metrics`, `read:learn`).
+* **Secrets**: automatic masking in logs.
+* **PII Handling**: full redaction unless authorised via policy.
+
+---
+
+## 14  Example End-to-End Flow
 
 ```mermaid
 flowchart LR
-    APP[Client] --> KRN[SQLx Kernel]
+    APP[Client] --> KRN[Kernel]
     KRN -->|spans/logs| OTL[OTel Collector]
     KRN -->|rewards/embeddings| KAF[Kafka Topics]
-    OTL --> OBS[Metrics/Traces/Logs Stores]
+    OTL --> OBS[Traces/Metrics Stores]
     KAF --> LBS[Learning Batch Store (Parquet)]
     LBS --> AIF[AI Fabric Training]
     AIF --> KRN
@@ -297,11 +326,39 @@ flowchart LR
 
 ---
 
-# 15. Open Questions
+## 15  Extensions in v4.1
 
-1. Should ATS define a minimal binary format for rewards to reduce overhead?  
-2. Do we expose a public gRPC for external reward ingestion (third-party agents)?  
-3. How to standardize per-tenant privacy budgets across meshes?  
-4. Should we adopt differential privacy at source for sensitive spans?
+| New Field    | Purpose                                           |
+| :----------- | :------------------------------------------------ |
+| `policy_id`  | Correlate telemetry with policy decisions         |
+| `slo_class`  | Link spans to SLO target (L/B/A/S)                |
+| `ai_meta`    | Nested model/epoch/reward/confidence data         |
+| `residency`  | Explicit region tag for privacy enforcement       |
+| `federation` | Fine-grained control of learning artifact sharing |
 
 ---
+
+## 16  Open Questions (RFCs)
+
+1. Should ATS define binary streaming for rewards to cut overhead by 50 %?
+2. Should embeddings support **incremental delta encoding** for vector reuse?
+3. Can Copilot push adaptive sampling directives via ATS control messages?
+4. Should telemetry adopt a **columnar Arrow/Parquet** schema for hot analytics?
+5. How to federate ATS registry updates across multi-tenant clusters?
+
+---
+
+## 17  Related Documents
+
+* `docs/specs/observability/SQLx-Observability-and-SLOs-v4.0.md`
+* `docs/specs/kernel/SQLx-Kernel-Spec-v4.0.md`
+* `docs/specs/policy/SQLx-Policy-Graph-and-RBAC-v4.0.md`
+* `docs/specs/udr/SQLx-UDR-Spec-v4.0.md`
+* `docs/specs/ai/SQLx-Copilot-Architecture-v1.0.md`
+
+---
+
+**Author:** NuBlox Engineering **Reviewed:** October 2025
+**License:** NuBlox SQLx OS — Autonomous Database Framework
+
+```

@@ -1,252 +1,281 @@
----
-title: "NuBlox SQLx OS — Runbook & Incident Playbook v4.0 (Draft)"
-status: Draft
-version: 4.0.0-draft.1
-owners:
-  - Stephen Spittal (@8140spitt)
-  - NuBlox Labs — SRE & Governance
-reviewers:
-  - Security & Compliance
-  - AI Fabric Team
-  - Policy π Team
-created: 2025-10-16
-updated: 2025-10-16
----
+Perfect 👍 — here’s the **complete, field-ready, single-canvas document** for your next operations pillar:
 
-> **Purpose** — Provide standardized operational playbooks for incident detection, classification, mitigation, and recovery across the SQLx OS ecosystem.  
-> Covers the Kernel, Driver, UDR, Policy, AI Fabric, and Control Plane subsystems.
+Save as
+`docs/ops/runbooks/SQLx-Runbook-and-IncidentPlaybook-v4.0.md`
 
 ---
 
-# 1. Objectives
-
-- Ensure **rapid, consistent, and auditable** response to operational issues.  
-- Define **severity levels**, **ownership**, and **response timelines (SLO-based)**.  
-- Provide **automated playbooks** (CLI + API invocations).  
-- Establish a **post-incident review** and **continuous improvement** cycle.
+````markdown
+# SQLx Runbook and Incident Playbook v4.0  
+*Operational Response, Recovery, and Continuity Framework for SQLx OS*  
+**Version:** 4.0 **Status:** Stable **Owner:** NuBlox Labs — Operations & SRE Division  
 
 ---
 
-# 2. Severity Classification
-
-| Sev | Definition | Impact | Target Response | Target Resolution |
-|:--:|:--|:--|:--|:--|
-| **P1** | Platform-wide outage / data loss risk | Critical | 5 min | 1 hr |
-| **P2** | Major subsystem degraded (Kernel/Driver/Policy) | High | 15 min | 4 hr |
-| **P3** | Partial degradation / slow path | Medium | 30 min | 8 hr |
-| **P4** | Minor bug / cosmetic issue | Low | 24 hr | Planned fix |
-| **P5** | Advisory / improvement request | None | Triage weekly | As scheduled |
+## Executive Summary  
+This Runbook and Incident Playbook defines the **operational procedures** for detecting, diagnosing, mitigating, and documenting incidents within the SQLx OS platform.  
+It provides a unified, automation-first framework integrating **Observability**, **Security**, and **AI Copilot** for rapid, policy-compliant response and continuous resilience improvement.  
+All steps herein are executed via **Kernel APIs**, **Telemetry signals**, and **AIF auto-mitigation hooks**.
 
 ---
 
-# 3. Detection Channels
+## 1  Objectives  
 
-| Source | Description |
+| Goal | Description |
 |:--|:--|
-| **ATS Alerts** | Metric-based triggers from AI Telemetry Schema |
-| **OTel Alerts** | Prometheus/Loki alert rules |
-| **Anomaly Detection (AI Fabric)** | Pattern-based detection on telemetry |
-| **SOC/SIEM Feeds** | Security event triggers |
-| **Manual Reports** | User or developer escalation via Studio or CLI |
+| **Minimise MTTR** | Detect and resolve issues within defined SLOs. |
+| **Maintain Compliance** | Ensure all actions are logged, signed, and auditable. |
+| **Automate Remediation** | Empower Copilot and SRE bots to perform first-response mitigation. |
+| **Preserve Data Integrity** | Never sacrifice durability or auditability during recovery. |
+| **Learn Continuously** | Every incident generates knowledge for future prevention. |
 
 ---
 
-# 4. Incident Lifecycle
+## 2  Operational Model  
 
 ```mermaid
 flowchart LR
-    DET[Detection] --> TRI[Triage]
+    DET[Detection] --> TRI[Triaging]
     TRI --> MIT[Mitigation]
     MIT --> REC[Recovery]
-    REC --> REV[Post-Incident Review]
-    REV --> CLOSE[Closure]
-    MIT --> LOG[Audit Ledger]
-    DET --> LOG
-    REC --> LOG
-    REV --> LOG
+    REC --> RCA[Root Cause Analysis]
+    RCA --> LRN[Learning & Improvement]
+    LRN --> DET
+````
+
+* **Detection** — Observability triggers or anomaly signals.
+* **Triaging** — Copilot or human classification by severity.
+* **Mitigation** — Automated or manual containment.
+* **Recovery** — Service restoration, data validation.
+* **RCA** — Root cause analysis, patch, documentation.
+* **Learning** — Update runbooks, SLOs, Copilot models.
+
+---
+
+## 3  Incident Classification
+
+| Severity  | Impact                              | Examples                          | Initial Response Time | Escalation                    |
+| :-------- | :---------------------------------- | :-------------------------------- | :-------------------- | :---------------------------- |
+| **SEV-1** | System-wide outage or data loss     | Kernel crash, driver auth failure | < 5 min               | Immediate on-call             |
+| **SEV-2** | Service degradation, partial outage | Slow queries, PPC regression      | < 15 min              | SRE + Copilot auto-mitigation |
+| **SEV-3** | Non-critical fault, single tenant   | Policy denial spike, log overflow | < 1 h                 | Ops review                    |
+| **SEV-4** | Cosmetic or tooling issue           | Dashboard latency, doc errors     | < 24 h                | Scheduled fix                 |
+
+---
+
+## 4  Detection Sources
+
+| Source                   | Mechanism                                          | Description                           |
+| :----------------------- | :------------------------------------------------- | :------------------------------------ |
+| **Observability Alerts** | Prometheus / Tempo / Loki                          | Threshold breaches and anomaly alerts |
+| **Copilot Signals**      | Reinforcement deviations                           | Negative reward or abnormal feedback  |
+| **Kernel Metrics**       | `sqlx_driver_errors_total`, `sqlx_exec_latency_ms` | Real-time execution health            |
+| **Security Telemetry**   | `sqlx_security_*` metrics                          | Auth, TLS, and policy violations      |
+| **External Monitors**    | Uptime checks, synthetic transactions              | SLA verification                      |
+
+---
+
+## 5  Response Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DET as Detection
+    participant COP as Copilot
+    participant OPS as On-Call SRE
+    participant KRN as Kernel
+    participant POL as Policy Engine
+
+    DET->>COP: Alert event
+    COP->>KRN: Attempt auto-mitigation
+    alt success
+        COP-->>OPS: Notify “resolved by Copilot”
+    else failure
+        COP-->>OPS: Escalate SEV-level incident
+        OPS->>KRN: Manual intervention via CLI/API
+        OPS->>POL: Verify policy compliance
+        OPS-->>DET: Status updated
+    end
 ```
 
 ---
 
-# 5. Triage Protocol
+## 6  Common Playbooks
 
-1. **Identify subsystem:** Kernel, Driver, UDR, Policy, AI, or Infra.  
-2. **Verify severity:** based on impact and scope.  
-3. **Assign on-call:** Owner from `OWNERS.md`.  
-4. **Acknowledge in chat (Slack/PagerDuty)** within SLA.  
-5. **Run diagnostic command:**
+### 6.1  Driver Connection Failures
 
-```bash
-sqlx diag run --scope kernel --since 15m
-```
-
-6. Review ATS traces and error rates:
-```bash
-sqlx diag analyze --metric sqlx_driver_errors_total
-```
-
----
-
-# 6. Automated Playbooks (CLI)
-
-| Scenario | Command | Description |
-|:--|:--|:--|
-| **Driver connection storm** | `sqlx ops throttle --driver mysql --limit 200rps` | Rate-limit new connections |
-| **Kernel deadlock** | `sqlx kernel reset --force` | Restart core worker safely |
-| **UDR translation errors** | `sqlx udr flush-cache --scope dialect:postgres` | Reset compiler cache |
-| **Policy deny storm** | `sqlx policy rollback --to version:prev` | Revert to previous policy pack |
-| **AI Fabric loop anomaly** | `sqlx ai disable --agent optimizer-v2` | Disable problematic agent |
-| **Migration stuck** | `sqlx migrate rollback --id MIG20251016-09` | Rollback in progress |
-| **Telemetry outage** | `sqlx observability restart --collector` | Restart telemetry stack |
-
-All automated commands emit ATS `ops.*` events with `trace_id` linkage.
-
----
-
-# 7. Example: Driver Timeout Spike (P2)
-
-**Detection:**  
-Prometheus alert:
-```
-sqlx_driver_errors_total{class="timeout"} > 0.5/s for 5m
-```
-
-**Diagnostics:**
-```bash
-sqlx diag run --scope driver --dialect mysql
-sqlx diag trace --error timeout
-```
-
+**Symptoms:** spike in `sqlx_driver_errors_total`, auth timeouts.
 **Actions:**
-1. Verify DB health and latency.  
-2. Reduce concurrency:
-```bash
-sqlx ops throttle --driver mysql --limit 100rps
-```
-3. Enable retry strategy:
-```bash
-sqlx driver set --param retry=true
-```
-4. Monitor recovery metrics:
-```bash
-sqlx diag watch sqlx_driver_latency_ms
-```
 
-**Resolution target:** within 1 hr.
+1. Copilot retries handshake with exponential backoff.
+2. Verify TLS cert validity and endpoint reachability.
+3. Rotate credentials via Kernel API.
+4. If persistent, failover to replica region.
+5. Record `driver.connect.error` span and mark resolved.
 
 ---
 
-# 8. Example: Policy Deny Spike (P3)
+### 6.2  Query Latency Regression
 
-**Detection:**  
-ATS: `policy.denies_total` increased 10× baseline.
-
-**Diagnostics:**
-```bash
-sqlx policy diff --from version:20251014 --to version:20251016
-```
-
+**Symptoms:** p95 latency breach for class L/B/A.
 **Actions:**
-1. Identify new deny rules.  
-2. Run dry-run simulation:
-```bash
-sqlx policy simulate --pack current
-```
-3. Rollback if misconfigured:
-```bash
-sqlx policy rollback --to version:prev
-```
 
-**Resolution target:** within 2 hr.
+1. Copilot inspects `sqlx_exec_latency_ms` histograms.
+2. Trigger PPC plan re-evaluation; invalidate slow plans.
+3. If regression persists, scale connection pools and cache TTL.
+4. Generate “Plan Regression” RCA report.
 
 ---
 
-# 9. Example: AI Fabric Drift (P3)
+### 6.3  Policy Denial Surge
 
-**Detection:**  
-AI optimizer suggestions cause regressions.
-
-**Diagnostics:**
-```bash
-sqlx ai compare --model optimizer-v1 optimizer-v2
-sqlx ai diff --metric plan_latency
-```
-
+**Symptoms:** sudden increase in `sqlx_policy_denies_total`.
 **Actions:**
-1. Disable agent:
-```bash
-sqlx ai disable --agent optimizer-v2
+
+1. Verify policy version → ensure latest signed pack loaded.
+2. Copilot analyses denial reasons; suggests rule tuning.
+3. If misconfiguration, rollback to prior policy revision.
+4. Log `policy.rollback.ok` event.
+
+---
+
+### 6.4  Telemetry Export Failure
+
+**Symptoms:** exporter errors > 0.5 %.
+**Actions:**
+
+1. Restart OTLP collector.
+2. Validate endpoint and credentials.
+3. Enable temporary file buffering.
+4. If prolonged, switch to secondary collector cluster.
+
+---
+
+### 6.5  Security Breach / Suspicious Activity
+
+**Symptoms:** repeated auth failures, anomaly detection trigger.
+**Actions:**
+
+1. Contain affected workspace; revoke all tokens.
+2. Rotate HSM keys; isolate Kernel nodes.
+3. Audit recent `sqlx_security_*` metrics.
+4. Export incident ledger snapshot for compliance.
+5. Initiate SEV-1 escalation and notify Security Team.
+
+---
+
+### 6.6  Migration Failure
+
+**Symptoms:** `ddl.migration.error`, rollback triggered.
+**Actions:**
+
+1. Inspect migration ledger for failure context.
+2. Validate schema consistency between source/target.
+3. Execute auto-rollback via Migration Engine.
+4. Generate signed RCA with evidence export.
+
+---
+
+## 7  Recovery Procedures
+
+| Step                     | Description                                        | Responsible       |
+| :----------------------- | :------------------------------------------------- | :---------------- |
+| **Verification**         | Confirm data durability and transaction integrity. | Kernel / DB Admin |
+| **Replay**               | Recover incomplete transactions via WAL replay.    | Kernel            |
+| **Cache Warmup**         | Rebuild PPC and AIR caches.                        | Copilot           |
+| **Audit Ledger Sync**    | Regenerate immutable hash chain.                   | Security Team     |
+| **Post-Incident Review** | Document timeline and lessons learned.             | SRE + Compliance  |
+
+---
+
+## 8  Communication & Escalation
+
+| Level  | Channel               | Participants       | Notes                 |
+| :----- | :-------------------- | :----------------- | :-------------------- |
+| **L1** | PagerDuty / Slack     | On-Call SRE        | Auto-page for SEV-1/2 |
+| **L2** | Email / Incident Room | Engineering Leads  | RCA coordination      |
+| **L3** | Compliance Report     | Executives / Legal | Regulatory disclosure |
+
+**Incident Timeline Template**
+
 ```
-2. Revert to stable:
-```bash
-sqlx ai enable --agent optimizer-v1
+- T0  Detection (alert ID)
+- T+5m  Initial triage
+- T+10m  Mitigation started
+- T+20m  Recovery validated
+- T+60m  Post-incident report draft
+- T+24h  RCA & prevention measures published
 ```
-3. File model incident in Studio under `AI-FABRIC-INCIDENTS`.
-
-**Resolution:** within 4 hr.
 
 ---
 
-# 10. Post-Incident Review (PIR)
+## 9  Automation Hooks
 
-| Field | Description |
-|:--|:--|
-| **Incident ID** | Unique traceable ID |
-| **Summary** | High-level overview |
-| **Impact** | Affected tenants/workspaces |
-| **Timeline** | Detection → Resolution |
-| **Root Cause** | Systemic issue |
-| **Mitigation** | Fix implemented |
-| **Follow-ups** | Actions assigned |
-| **Lessons Learned** | Improvements logged |
-
-Stored as Markdown in `/docs/ops/reports/YYYY/MM/INCIDENT-<id>.md`.
+| Hook                 | Trigger                  | Action                              |
+| :------------------- | :----------------------- | :---------------------------------- |
+| `onLatencyBreach`    | p95 > SLO                | Copilot adjusts scheduler weights   |
+| `onDriverErrorSpike` | errors > 50/5m           | Kernel reconnects pool              |
+| `onPolicyRollback`   | policy rollback executed | Lock policy pack version            |
+| `onTelemetryDrop`    | exporter failure         | Switch collector endpoint           |
+| `onMigrationFail`    | DDL failure              | Trigger rollback & alert Compliance |
 
 ---
 
-# 11. Communication & Escalation
+## 10  Documentation & Evidence
 
-| Stage | Channel | Example |
-|:--|:--|:--|
-| Detection | PagerDuty / Slack `#sqlx-ops` | Automated |
-| Mitigation | `#sqlx-incident` thread | Command handoffs |
-| Recovery | Jira issue link | Tracking |
-| PIR | Internal wiki + Git commit | Archival |
+All incidents must generate:
 
----
+* **Incident Record** (JSON, signed)
+* **RCA Report** (Markdown + PDF export)
+* **Evidence Pack** (telemetry snapshots, policy pack, ledger diff)
+* **Follow-Up Actions** (GitHub issue links or change requests)
 
-# 12. Integration with Observability
-
-- Every incident event is **ATS-linked** (`trace_id`, `incident_id`).  
-- Traces and metrics are frozen in a “snapshot” dataset.  
-- Logs replayable for forensics (Loki/OpenSearch).  
-- Cross-reference with SLO burn-down reports.
+Stored under `/var/sqlx/incidents/{year}/{incident_id}/`.
 
 ---
 
-# 13. Automation & AI Assist
+## 11  Continuous Improvement
 
-- AI Fabric agents analyze telemetry patterns to predict incidents.  
-- LLM-based summarizer produces initial PIR draft.  
-- Auto-classifier labels incidents (kernel/driver/policy).  
-- Future: closed-loop remediation for repeatable low-risk events.
-
----
-
-# 14. Security & Compliance Tie-in
-
-- All `sec.*` and `ops.*` events appended to Audit Ledger.  
-- Policy packs require **dual approval** for rollback post-incident.  
-- Sensitive incidents (data exposure, auth failure) auto-notify DPO.  
-- PIRs linked to compliance evidence.
+* Copilot consumes post-incident RCA data to retrain reward models.
+* Kernel updates its mitigation heuristics.
+* Observability adjusts thresholds and dynamic baselines.
+* Runbooks versioned; diffs tracked in GitHub for audit.
 
 ---
 
-# 15. Open Questions
+## 12  Performance Targets
 
-1. Automate PIR drafting directly into Git commits via `sqlx ops review`?  
-2. Support “chaos rehearsal” incidents for resilience scoring?  
-3. Integrate Studio live view for ongoing incident visualization?  
-4. AI Fabric auto-repair pipelines — safe default or opt-in only?  
+| Metric                          | Target   | Notes         |
+| :------------------------------ | :------- | :------------ |
+| MTTA (mean time to acknowledge) | < 5 min  | SEV-1         |
+| MTTR (mean time to resolve)     | < 30 min | SEV-1         |
+| Auto-Mitigation Success         | ≥ 80 %   | SEV-2 class   |
+| RCA Completion                  | < 24 h   | All incidents |
+| Runbook Drift                   | ≤ 10 %   | Monthly audit |
 
 ---
+
+## 13  Open Questions (RFCs)
+
+1. Should Copilot autonomously escalate based on **anomaly severity score**?
+2. Can ATS schema extensions carry **incident context metadata** for correlation?
+3. Should post-incident RCAs feed directly into AI training pipelines?
+4. Can Runbooks be rendered dynamically inside SQLx Studio dashboards?
+5. Should the next release adopt **“Ops-as-Code”** policy packs (YAML DSL)?
+
+---
+
+## 14  Related Documents
+
+* `docs/security/SQLx-Security-Whitepaper-and-ThreatModel-v4.0.md`
+* `docs/specs/kernel/SQLx-Kernel-Spec-v4.0.md`
+* `docs/specs/observability/SQLx-Observability-and-SLOs-v4.0.md`
+* `docs/specs/ai/SQLx-Copilot-Architecture-v1.0.md`
+* `docs/ops/checklists/` *(operational readiness templates)*
+
+---
+
+**Author:** NuBlox SRE & Operations Team **Reviewed:** October 2025
+**License:** NuBlox SQLx OS — Autonomous Database Framework
+
+```
